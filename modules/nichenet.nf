@@ -1,84 +1,124 @@
-// LIANA analysis module
+// NicheNet analysis module
 
-process LIANA_ANALYSIS {
-    tag "$input_file.simpleName"
-    label 'process_medium'
+process NICHENET_ANALYSIS {
+    tag "$h5ad_file.simpleName"
+    label 'process_high'
     
-    publishDir "${params.outdir}/liana", mode: 'copy'
+    publishDir "${params.outdir}/nichenet", mode: 'copy'
     
     input:
-    path input_file
+    path h5ad_file
+    path liana_results
     val sender_celltype
     val receiver_celltype
     
     output:
-    path "for_nichenet.h5ad", emit: h5ad
-    path "liana_ranked_interactions.csv", emit: liana_results
-    path "top_lr_pairs_for_nichenet.csv", emit: top_lr_pairs
-    path "liana_dotplot.pdf", emit: dotplot
+    path "nichenet_results_from_liana.rds", emit: nichenet_results
+    path "ligand_activity_heatmap.pdf", emit: activity_heatmap
+    path "ligand_target_heatmap.pdf", emit: target_heatmap
+    path "*.pdf"
     
     script:
     """
-    #!/usr/bin/env python
-    import scanpy as sc
-    import liana as li
-    import pandas as pd
-    import matplotlib.pyplot as plt
+    #!/usr/bin/env Rscript
     
-    # Load AnnData object
-    adata = sc.read_h5ad("${input_file}")
+    # Load required libraries
+    library(Seurat)
+    library(nichenetr)
+    library(tidyverse)
+    library(anndata)
     
-    # Check if cell type annotations exist
-    if 'cell_type' not in adata.obs.columns:
-        if 'leiden' in adata.obs.columns:
-            print("Using 'leiden' as cell type column")
-            adata.obs['cell_type'] = adata.obs['leiden']
-        elif 'clusters' in adata.obs.columns:
-            print("Using 'clusters' as cell type column")
-            adata.obs['cell_type'] = adata.obs['clusters']
-        else:
-            raise ValueError("No cell type annotations found in AnnData object")
+    # Import AnnData and convert to Seurat
+    print("Importing AnnData object...")
+    adata <- read_h5ad("${h5ad_file}")
+    seurat_obj <- as.Seurat(adata, counts = "X")
     
-    # Verify cell types exist
-    if "${sender_celltype}" not in adata.obs['cell_type'].unique():
-        raise ValueError(f"Sender cell type '${sender_celltype}' not found in data")
-    if "${receiver_celltype}" not in adata.obs['cell_type'].unique():
-        raise ValueError(f"Receiver cell type '${receiver_celltype}' not found in data")
+    # Import LIANA results
+    liana_results <- read.csv("${liana_results}")
+    top_lr_pairs <- read.csv("top_lr_pairs_for_nichenet.csv")
     
-    # Run LIANA
-    liana_result = li.liana_pipe(
-        adata,
-        groupby='cell_type',
-        resource_name=['CellChat', 'CellPhoneDB', 'Consensus'],
-        verbose=True
+    # Print summary of LIANA results
+    print(paste("Top LIANA interactions between", 
+                "${sender_celltype}", "and", "${receiver_celltype}"))
+    print(head(liana_results[, c("ligand", "receptor", "source", "target", "specificity_score")], 10))
+    
+    # Get cell IDs for these types
+    sender_cells <- WhichCells(seurat_obj, expression = cell_type == "${sender_celltype}")
+    receiver_cells <- WhichCells(seurat_obj, expression = cell_type == "${receiver_celltype}")
+    
+    if(length(sender_cells) == 0) {
+        stop(paste0("No cells found for sender cell type: ", "${sender_celltype}"))
+    }
+    if(length(receiver_cells) == 0) {
+        stop(paste0("No cells found for receiver cell type: ", "${receiver_celltype}"))
+    }
+    
+    # Get expressed genes
+    expressed_genes_sender <- nichenetr::get_expressed_genes(seurat_obj, sender_cells)
+    expressed_genes_receiver <- nichenetr::get_expressed_genes(seurat_obj, receiver_cells)
+    
+    # Filter ligands and receptors based on LIANA results
+    prioritized_ligands <- unique(top_lr_pairs\$ligand)
+    prioritized_receptors <- unique(top_lr_pairs\$receptor)
+    
+    # Get final ligand-receptor pairs that are expressed and in LIANA's top results
+    selected_ligands <- intersect(
+        expressed_genes_sender\$gene[expressed_genes_sender\$gene %in% nichenetr::ligands],
+        prioritized_ligands
     )
     
-    # Filter interactions between sender and receiver
-    filtered_interactions = liana_result[
-        ((liana_result['source'] == "${sender_celltype}") & (liana_result['target'] == "${receiver_celltype}")) |
-        ((liana_result['source'] == "${receiver_celltype}") & (liana_result['target'] == "${sender_celltype}"))
-    ]
-    
-    # Rank by specificity score
-    ranked_interactions = filtered_interactions.sort_values(by='specificity_score', ascending=False)
-    
-    # Save full results
-    ranked_interactions.to_csv("liana_ranked_interactions.csv", index=False)
-    
-    # Extract top ligand-receptor pairs
-    top_lr_pairs = ranked_interactions.head(50)
-    top_lr_pairs[['ligand', 'receptor']].to_csv("top_lr_pairs_for_nichenet.csv", index=False)
-    
-    # Create dotplot visualization
-    li.pl.dotplot(
-        ranked_interactions.head(20),
-        source_groups=["${sender_celltype}"],
-        target_groups=["${receiver_celltype}"],
-        figsize=(12, 10)
+    selected_receptors <- intersect(
+        expressed_genes_receiver\$gene[expressed_genes_receiver\$gene %in% nichenetr::receptors],
+        prioritized_receptors
     )
-    plt.savefig("liana_dotplot.pdf", bbox_inches='tight', dpi=300)
     
-    # Export AnnData for NicheNet
-    adata.write_h5ad("for_nichenet.h5ad")
+    print(paste("Using", length(selected_ligands), "ligands and", 
+                length(selected_receptors), "receptors from LIANA analysis"))
+    
+    if(length(selected_ligands) == 0 || length(selected_receptors) == 0) {
+        stop("No matching ligands or receptors found between LIANA results and NicheNet database")
+    }
+    
+    # Define background expressed genes (for enrichment calculations)
+    background_expressed_genes <- nichenetr::get_expressed_genes(seurat_obj)
+    
+    # Run NicheNet with LIANA-prioritized ligand-receptor pairs
+    print("Running NicheNet analysis...")
+    nichenet_output <- nichenetr::nichenet_analysis(
+        seurat_obj = seurat_obj,
+        sender_cells = sender_cells,
+        receiver_cells = receiver_cells,
+        ligands = selected_ligands,
+        receptors = selected_receptors,
+        expressed_genes_receiver = expressed_genes_receiver\$gene,
+        background_expressed_genes = background_expressed_genes\$gene
+    )
+    
+    # Save NicheNet results
+    saveRDS(nichenet_output, "nichenet_results_from_liana.rds")
+    print("Saved NicheNet results to 'nichenet_results_from_liana.rds'")
+    
+    # Create visualizations
+    print("Creating visualizations...")
+    
+    # 1. Ligand activity heatmap
+    ligand_activity_plot <- nichenetr::nichenet_ligand_activity_plot(nichenet_output, 
+                                                top_n_ligands = min(20, length(selected_ligands)),
+                                                color_scheme = "viridis")
+    ggsave("ligand_activity_heatmap.pdf", ligand_activity_plot, width = 10, height = 8)
+    
+    # 2. Ligand-target heatmap
+    target_heatmap <- nichenetr::nichenet_ligand_target_heatmap(nichenet_output, 
+                                                top_n_ligands = min(10, length(selected_ligands)),
+                                                top_n_targets = 50)
+    ggsave("ligand_target_heatmap.pdf", target_heatmap, width = 12, height = 10)
+    
+    # 3. Create a ligand-receptor network
+    lr_network <- nichenetr::nichenet_ligand_receptor_network(nichenet_output,
+                                                ligands = selected_ligands,
+                                                receptors = selected_receptors)
+    ggsave("ligand_receptor_network.pdf", lr_network, width = 10, height = 8)
+    
+    print("NicheNet analysis complete!")
     """
 }
