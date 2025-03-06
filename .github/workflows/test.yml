@@ -1,0 +1,41 @@
+name: Pipeline Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test pipeline
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Nextflow
+      run: |
+        wget -qO- https://get.nextflow.io | bash
+        chmod +x nextflow
+        sudo mv nextflow /usr/local/bin/
+
+    - name: Set up conda
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        auto-update-conda: true
+        python-version: 3.9
+    
+    - name: Test Workflow (Syntax)
+      run: |
+        nextflow run ${GITHUB_WORKSPACE} --help
+    
+    # Optional: Add a test with minimal test data if available
+    # - name: Test with example data
+    #   run: |
+    #     nextflow run ${GITHUB_WORKSPACE} \
+    #       --input test_data.h5ad \
+    #       --sender_celltype TestSender \
+    #       --receiver_celltype TestReceiver \
+    #       -profile conda \
+    #       -stub
