@@ -1,7 +1,7 @@
 # LIANA-NicheNet Pipeline
 
 [![Nextflow](https://img.shields.io/badge/nextflow-%E2%89%A521.10.3-brightgreen.svg)](https://www.nextflow.io/)
-[![GitHub Actions Status](https://github.com/yourusername/liana-nichenet-pipeline/workflows/tests/badge.svg)](https://github.com/yourusername/liana-nichenet-pipeline/actions)
+[![GitHub Actions Status](https://github.com/vishaloza/ccc-pipeline/workflows/tests/badge.svg)](https://github.com/vishaloza/ccc-pipeline/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Nextflow pipeline for integrated cell-cell communication analysis using LIANA (Python) and NicheNet (R).
