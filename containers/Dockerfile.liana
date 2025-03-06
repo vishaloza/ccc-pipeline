@@ -1,0 +1,48 @@
+FROM python:3.9-slim
+
+LABEL description="LIANA container for cell-cell communication analysis"
+LABEL maintainer="Vishal Oza <vishoza@gmail.com>"
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    libhdf5-dev \
+    wget \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Install Python packages
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install scanpy and dependencies
+RUN pip install --no-cache-dir \
+    scanpy \
+    anndata \
+    pandas \
+    numpy \
+    scipy \
+    matplotlib \
+    seaborn \
+    scikit-learn \
+    igraph \
+    h5py
+
+# Install LIANA
+RUN pip install --no-cache-dir liana
+
+# Test installation
+RUN python -c "import liana; import scanpy; print('LIANA installation successful')"
+
+# Create a non-root user
+RUN groupadd -r nxfuser && useradd -r -g nxfuser nxfuser
+RUN mkdir -p /home/nxfuser && chown -R nxfuser:nxfuser /home/nxfuser
+USER nxfuser
+
+WORKDIR /home/nxfuser
+
+CMD ["python"]

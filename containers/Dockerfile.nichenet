@@ -1,0 +1,45 @@
+FROM csangara/nichenetr:latest
+
+LABEL description="Extended NicheNet container for CCC pipeline"
+LABEL maintainer="Your Name <your.email@example.com>"
+
+# Install additional system dependencies if needed
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libhdf5-dev \
+    procps \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set CRAN repository
+RUN echo 'options(repos = c(CRAN = "https://cloud.r-project.org"))' > ~/.Rprofile
+
+# Install additional R packages needed for the pipeline
+RUN R -e 'install.packages(c("hdf5r", "ggnetwork", "pheatmap", "viridis", "igraph", "remotes"), dependencies=TRUE)'
+
+# Install anndata R package for AnnData support
+RUN R -e 'remotes::install_github("dynverse/anndata")'
+
+# Install SeuratDisk for h5ad support
+RUN R -e 'remotes::install_github("mojaveazure/seurat-disk")'
+
+# Verify all required packages are available
+RUN R -e '\
+    libs <- c("nichenetr", "Seurat", "anndata", "tidyverse", "ggnetwork", "pheatmap", "viridis", "igraph"); \
+    cat("Checking required packages:\n"); \
+    for (lib in libs) { \
+        if (requireNamespace(lib, quietly = TRUE)) { \
+            cat(lib, ": OK\n") \
+        } else { \
+            cat(lib, ": MISSING!\n"); \
+            quit(status = 1) \
+        } \
+    }'
+
+# Create a non-root user for Nextflow compatibility
+RUN groupadd -r nxfuser && useradd -r -g nxfuser nxfuser
+RUN mkdir -p /home/nxfuser && chown -R nxfuser:nxfuser /home/nxfuser
+USER nxfuser
+
+WORKDIR /home/nxfuser
+
+CMD ["R"]
