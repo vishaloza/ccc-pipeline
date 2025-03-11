@@ -3,7 +3,8 @@
 process NICHENET_ANALYSIS {
     tag "$h5ad_file.simpleName"
     label 'process_high'
-    
+
+    containerOptions = { workflow.containerEngine == "singularity" ? '--bind $PWD:/workdir' : '' }
     publishDir "${params.outdir}/nichenet", mode: 'copy'
     
     input:
@@ -21,6 +22,8 @@ process NICHENET_ANALYSIS {
     script:
     """
     #!/usr/bin/env Rscript
+
+    cat("Working directory:", getwd(), "\n")
     
     # Load required libraries
     library(Seurat)
@@ -32,6 +35,9 @@ process NICHENET_ANALYSIS {
     print("Importing AnnData object...")
     adata <- read_h5ad("${h5ad_file}")
     seurat_obj <- as.Seurat(adata, counts = "X")
+
+    # Print the available files for debugging
+    cat("Files in current directory:", paste(list.files(), collapse=", "), "\n")
     
     # Import LIANA results
     liana_results <- read.csv("${liana_results}")
