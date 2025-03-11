@@ -4,6 +4,7 @@ process LIANA_ANALYSIS {
     tag "$input_file.simpleName"
     label 'process_medium'
     
+    containerOptions = { workflow.containerEngine == "singularity" ? '--bind $PWD:/workdir' : '' }
     publishDir "${params.outdir}/liana", mode: 'copy'
     
     input:
@@ -24,6 +25,10 @@ process LIANA_ANALYSIS {
     import liana as li
     import pandas as pd
     import matplotlib.pyplot as plt
+    import os
+    import sys
+
+    print(f"Working directory: {os.getcwd()}", file=sys.stderr)
     
     # Load AnnData object
     adata = sc.read_h5ad("${input_file}")
@@ -79,6 +84,8 @@ process LIANA_ANALYSIS {
     plt.savefig("liana_dotplot.pdf", bbox_inches='tight', dpi=300)
     
     # Export AnnData for NicheNet
+    print(f"Writing output to: {os.getcwd()}/for_nichenet.h5ad", file=sys.stderr)
     adata.write_h5ad("for_nichenet.h5ad")
+    print(f"Files in current directory: {os.listdir('.')}", file=sys.stderr)
     """
 }
