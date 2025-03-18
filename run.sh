@@ -7,6 +7,7 @@ SENDER=""
 RECEIVER=""
 OUTDIR="results"
 PROFILE="singularity_3_5,slurm"  # Use the Singularity 3.5 compatible profile by default
+CELLTYPE_COLUMN="cell_type"  # Default column name, but can be overridden
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -31,6 +32,10 @@ while [[ $# -gt 0 ]]; do
       PROFILE="$2"
       shift 2
       ;;
+    --celltype_column)
+      CELLTYPE_COLUMN="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1"
       exit 1
@@ -41,7 +46,7 @@ done
 # Check for required arguments
 if [[ -z "$INPUT" || -z "$SENDER" || -z "$RECEIVER" ]]; then
   echo "Error: Required arguments missing"
-  echo "Usage: ./run_hpc.sh --input <h5ad_file> --sender <sender_celltype> --receiver <receiver_celltype> [--outdir <output_dir>] [--profile <nextflow_profile>]"
+  echo "Usage: ./run.sh --input <h5ad_file> --sender <sender_celltype> --receiver <receiver_celltype> [--outdir <output_dir>] [--profile <nextflow_profile>] [--celltype_column <column_name>]"
   exit 1
 fi
 
@@ -79,15 +84,17 @@ echo "=================================="
 echo "Input file:    $INPUT"
 echo "Sender:        $SENDER"
 echo "Receiver:      $RECEIVER"
+echo "Cell type col: $CELLTYPE_COLUMN"
 echo "Output dir:    $OUTDIR"
 echo "Profile:       $PROFILE"
 echo "=================================="
 
-# Run the pipeline with verbose logging enabled
+# Run the pipeline with verbose logging enabled and explicitly set the celltype_column parameter
 NXF_VER=21.10.6 nextflow run main.nf \
   --input "$INPUT" \
   --sender_celltype "$SENDER" \
   --receiver_celltype "$RECEIVER" \
+  --celltype_column "$CELLTYPE_COLUMN" \
   --outdir "$OUTDIR" \
   -profile "$PROFILE" \
   -resume \
