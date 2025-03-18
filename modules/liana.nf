@@ -29,32 +29,30 @@ process LIANA_ANALYSIS {
     import sys
 
     print(f"Working directory: {os.getcwd()}", file=sys.stderr)
+    print(f"Input file: ${input_file}", file=sys.stderr)
+    print(f"Sender: ${sender_celltype}", file=sys.stderr)
+    print(f"Receiver: ${receiver_celltype}", file=sys.stderr)
+    print(f"Cell type column: ${params.celltype_column}", file=sys.stderr)
     
     # Load AnnData object
     adata = sc.read_h5ad("${input_file}")
     
-    # Check if the specified cell type column exists
+    # Strictly check if the specified column exists
+    if "${params.celltype_column}" not in adata.obs.columns:
+        raise ValueError(f"ERROR: The specified cell type column '${params.celltype_column}' does not exist in the dataset. Available columns: {list(adata.obs.columns)}")
+    
+    # Use exactly the specified column
     celltype_column = "${params.celltype_column}"
-    if celltype_column not in adata.obs.columns:
-        if 'cell_type' in adata.obs.columns:
-            print(f"Using 'cell_type' as cell type column instead of {celltype_column}")
-            celltype_column = 'cell_type'
-        elif 'leiden' in adata.obs.columns:
-            print(f"Using 'leiden' as cell type column instead of {celltype_column}")
-            celltype_column = 'leiden'
-        elif 'clusters' in adata.obs.columns:
-            print(f"Using 'clusters' as cell type column instead of {celltype_column}")
-            celltype_column = 'clusters'
-        else:
-            raise ValueError(f"Specified cell type column '{celltype_column}' not found, and no suitable alternatives found")
     
-    print(f"Using column '{celltype_column}' for cell type annotations")
+    # Print unique values in the cell type column for debugging
+    print(f"Unique values in '{celltype_column}': {adata.obs[celltype_column].unique()}", file=sys.stderr)
     
-    # Verify cell types exist
+    # Check if the sender and receiver cell types exist in the specified column
     if "${sender_celltype}" not in adata.obs[celltype_column].unique():
-        raise ValueError(f"Sender cell type '${sender_celltype}' not found in data")
+        raise ValueError(f"ERROR: Sender cell type '${sender_celltype}' not found in column '{celltype_column}'. Available cell types: {adata.obs[celltype_column].unique()}")
+    
     if "${receiver_celltype}" not in adata.obs[celltype_column].unique():
-        raise ValueError(f"Receiver cell type '${receiver_celltype}' not found in data")
+        raise ValueError(f"ERROR: Receiver cell type '${receiver_celltype}' not found in column '{celltype_column}'. Available cell types: {adata.obs[celltype_column].unique()}")
     
     # Run LIANA
     liana_result = li.liana_pipe(
