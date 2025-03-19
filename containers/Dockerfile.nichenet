@@ -1,7 +1,7 @@
 FROM csangara/nichenetr:latest
 
 LABEL description="Extended NicheNet container for CCC pipeline"
-LABEL maintainer="Your Name <your.email@example.com>"
+LABEL maintainer="Vishal Oza <vishoza@uab.edu>"
 
 # Install additional system dependencies if needed
 RUN apt-get update && apt-get install -y --no-install-recommends \
