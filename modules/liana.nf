@@ -200,14 +200,47 @@ process LIANA_ANALYSIS {
     # Check if we're working with mouse data and translate resources if needed
     is_mouse = is_mouse_data(adata)
     
+    # Create a resource variable to potentially hold mouse-translated resources
+    mouse_resource = None
+    
     # If it's mouse data, translate the resources
     if is_mouse:
         log("Translating LIANA resources for mouse data...")
         try:
-            # Get the default resource
-            log("Getting default LIANA resource...")
-            resource = li.rs.get_resource()
+            # Try to select the resource using the correct method
+            log("Selecting consensus resource...")
+            resource = None
             
+            try:
+                # First try the select_resource method
+                resource = li.rs.select_resource('consensus')
+                log("Successfully selected resource using li.rs.select_resource")
+            except Exception as e:
+                log(f"Error with select_resource: {str(e)}")
+                # Try alternative methods
+                try:
+                    # Some versions have a get_resource method
+                    if hasattr(li.rs, 'get_resource'):
+                        resource = li.rs.get_resource()
+                        log("Successfully got resource using li.rs.get_resource")
+                    # Others might just have a resources dictionary
+                    elif hasattr(li.rs, 'resources'):
+                        resource = li.rs.resources.get('consensus', li.rs.resources['cellphonedb'])
+                        log("Got resource from li.rs.resources dictionary")
+                    # Last resort - get it from omnipath if available
+                    elif hasattr(li, 'omnipathR'):
+                        resource = li.omnipathR.get_resource('consensus')
+                        log("Got resource using li.omnipathR")
+                    else:
+                        log("Could not find any method to get resources")
+                        raise ImportError("No resource access methods available")
+                except Exception as e2:
+                    log(f"All resource methods failed: {str(e2)}")
+                    raise
+            
+            if resource is None:
+                raise ValueError("Could not load resource")
+                
             log("Getting human-mouse homolog mapping...")
             # Get homolog mapping
             map_df = li.rs.get_hcop_orthologs(
@@ -235,43 +268,80 @@ process LIANA_ANALYSIS {
             
             log(f"Translated resource has {len(mouse_resource)} entries")
             
-            # Set as default resource for use in analysis
-            li.rs.set_resource(mouse_resource)
-            log("Mouse resource set as default")
-            
         except Exception as e:
             log(f"Error translating resources for mouse: {str(e)}")
             log(traceback.format_exc())
             log("WARNING: Will proceed with human resources, results may be suboptimal")
     
+    # Convert use_raw string parameter to boolean
+    use_raw_bool = "${use_raw}".lower() == 'true'
+    log(f"Using use_raw={use_raw_bool} for LIANA analysis")
+    
     # Run LIANA - try different approaches based on errors
     log("Running LIANA analysis...")
     
-    # Convert use_raw parameter from string to boolean
-    use_raw_bool = ${use_raw}.lower() == 'true'
-    log(f"Using use_raw={use_raw_bool} for LIANA analysis")
-    
     # Define the methods to try, in order of preference
-    methods_to_try = [
+    methods_to_try = []
+    
+    # If we have mouse resources, try using those first
+    if is_mouse and mouse_resource is not None:
+        methods_to_try.append(
+            ("li.mt.rank_aggregate with mouse resource", 
+             lambda: li.mt.rank_aggregate(
+                 adata, 
+                 groupby=celltype_column, 
+                 resource=mouse_resource,  # Use our translated resource
+                 expr_prop=0.1, 
+                 verbose=True, 
+                 use_raw=use_raw_bool
+             ))
+        )
+    
+    # Add standard methods as fallbacks
+    methods_to_try.extend([
         ("li.mt.rank_aggregate with specified use_raw", 
-         lambda: li.mt.rank_aggregate(adata, groupby=celltype_column, resource_name='consensus', 
-                                     expr_prop=0.1, verbose=True, use_raw=use_raw_bool)),
+         lambda: li.mt.rank_aggregate(
+             adata, 
+             groupby=celltype_column, 
+             resource_name='consensus', 
+             expr_prop=0.1, 
+             verbose=True, 
+             use_raw=use_raw_bool
+         )),
         
         ("li.mt.rank_aggregate with opposite use_raw", 
-         lambda: li.mt.rank_aggregate(adata, groupby=celltype_column, resource_name='consensus', 
-                                     expr_prop=0.1, verbose=True, use_raw=(not use_raw_bool))),
+         lambda: li.mt.rank_aggregate(
+             adata, 
+             groupby=celltype_column, 
+             resource_name='consensus', 
+             expr_prop=0.1, 
+             verbose=True, 
+             use_raw=(not use_raw_bool)
+         )),
         
         ("li.pipe with specified use_raw", 
-         lambda: li.pipe(adata, groupby=celltype_column, resource_name='consensus', 
-                        expr_prop=0.1, verbose=True, use_raw=use_raw_bool)),
+         lambda: li.pipe(
+             adata, 
+             groupby=celltype_column, 
+             resource_name='consensus', 
+             expr_prop=0.1, 
+             verbose=True, 
+             use_raw=use_raw_bool
+         )),
         
         ("li.pipe with opposite use_raw", 
-         lambda: li.pipe(adata, groupby=celltype_column, resource_name='consensus', 
-                        expr_prop=0.1, verbose=True, use_raw=(not use_raw_bool))),
+         lambda: li.pipe(
+             adata, 
+             groupby=celltype_column, 
+             resource_name='consensus', 
+             expr_prop=0.1, 
+             verbose=True, 
+             use_raw=(not use_raw_bool)
+         )),
         
         ("Simple manual approach", 
          lambda: run_liana_manual(adata, celltype_column))
-    ]
+    ])
     
     # Define a simple manual approach as last resort
     def run_liana_manual(adata, celltype_column):
