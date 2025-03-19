@@ -48,15 +48,18 @@ process LIANA_ANALYSIS {
     
     # Print LIANA version and available modules
     log(f"LIANA version: {li.__version__}")
-    log("Available LIANA modules:")
+    log("LIANA available modules:")
     for module_name in dir(li):
         if not module_name.startswith('_'):
             log(f"  - {module_name}")
-            submodule = getattr(li, module_name)
-            if hasattr(submodule, '__dir__'):
-                for func_name in dir(submodule):
-                    if not func_name.startswith('_'):
-                        log(f"    - {module_name}.{func_name}")
+            try:
+                submodule = getattr(li, module_name)
+                if hasattr(submodule, '__dir__'):
+                    for func_name in dir(submodule):
+                        if not func_name.startswith('_'):
+                            log(f"    - {module_name}.{func_name}")
+            except Exception as e:
+                log(f"    Error inspecting module: {str(e)}")
     
     # Load AnnData object
     log("Loading AnnData object...")
@@ -89,36 +92,84 @@ process LIANA_ANALYSIS {
         log(error_msg)
         raise ValueError(error_msg)
     
-    # Run LIANA using the correct API (following the vignette)
-    log("Running LIANA analysis...")
+    # Run LIANA using the correct API according to the vignette
+    log("Running LIANA analysis with mt.rank_aggregate...")
     
-    # Step 1: Filter the data using pp.filter
-    log("Step 1: Filtering data...")
-    li.pp.filter(adata, groupby=celltype_column)
+    try:
+        # First check if mt.rank_aggregate exists
+        if hasattr(li, 'mt') and hasattr(li.mt, 'rank_aggregate'):
+            log("Using li.mt.rank_aggregate as shown in the vignette...")
+            li.mt.rank_aggregate(
+                adata,
+                groupby=celltype_column,
+                resource_name='consensus',
+                expr_prop=0.1,
+                verbose=True
+            )
+        # If that fails, try alternative methods
+        elif hasattr(li, 'rank_aggregate'):
+            log("Using li.rank_aggregate...")
+            li.rank_aggregate(
+                adata,
+                groupby=celltype_column,
+                resource_name='consensus',
+                expr_prop=0.1,
+                verbose=True
+            )
+        # Last resort - look for any method that might work
+        else:
+            log("WARNING: Could not find rank_aggregate function. Looking for alternatives...")
+            if hasattr(li, 'method') and hasattr(li.method, 'liana_pipe'):
+                log("Using li.method.liana_pipe...")
+                li.method.liana_pipe(
+                    adata,
+                    groupby=celltype_column,
+                    resource_name=['CellChat', 'CellPhoneDB', 'Consensus'],
+                    verbose=True
+                )
+            elif hasattr(li, 'pipe'):
+                log("Using li.pipe...")
+                li.pipe(
+                    adata,
+                    groupby=celltype_column,
+                    verbose=True
+                )
+            else:
+                error_msg = "Could not find any suitable LIANA analysis function"
+                log(error_msg)
+                raise AttributeError(error_msg)
+    except Exception as e:
+        log(f"Error during LIANA analysis: {str(e)}")
+        raise
     
-    # Step 2: Rank using tl.rank
-    log("Step 2: Ranking interactions...")
-    li.tl.rank(adata, groupby=celltype_column)
+    # Get the results from adata.uns
+    log("Extracting LIANA results...")
     
-    # Step 3: Get the results
-    log("Step 3: Getting results...")
-    
-    # Check if the results are stored in adata.uns
-    if 'liana_res' not in adata.uns:
-        log("WARNING: 'liana_res' not found in adata.uns after running analysis")
+    # Check if results are in adata.uns
+    if 'liana_res' in adata.uns:
+        log("Found liana_res in adata.uns")
+        liana_result = adata.uns['liana_res']
+    else:
+        log(f"WARNING: liana_res not found in adata.uns")
         log(f"Available keys in adata.uns: {list(adata.uns.keys())}")
         
-        # Try to find any LIANA-related keys
+        # Try to find any LIANA-related results
         liana_keys = [key for key in adata.uns.keys() if 'liana' in key.lower()]
         if liana_keys:
             log(f"Found potential LIANA result keys: {liana_keys}")
             liana_result = adata.uns[liana_keys[0]]
         else:
-            error_msg = "No LIANA results found in the AnnData object"
-            log(error_msg)
-            raise KeyError(error_msg)
-    else:
-        liana_result = adata.uns['liana_res']
+            # Last resort - check if rank_aggregate results might be named differently
+            rank_keys = [key for key in adata.uns.keys() if 'rank' in key.lower()]
+            if rank_keys:
+                log(f"Found potential rank result keys: {rank_keys}")
+                liana_result = adata.uns[rank_keys[0]]
+            else:
+                error_msg = "No LIANA results found in the AnnData object"
+                log(error_msg)
+                raise KeyError(error_msg)
+    
+    log(f"Result type: {type(liana_result)}")
     
     # Convert to DataFrame if needed
     if not isinstance(liana_result, pd.DataFrame):
@@ -128,6 +179,10 @@ process LIANA_ANALYSIS {
                 # Try to find the aggregated results
                 if 'aggregated' in liana_result:
                     liana_result = liana_result['aggregated']
+                    log("Using 'aggregated' results from dictionary")
+                elif 'consensus' in liana_result:
+                    liana_result = liana_result['consensus']
+                    log("Using 'consensus' results from dictionary")
                 elif len(liana_result) > 0:
                     # Take the first item if it's a dict of DataFrames
                     first_key = list(liana_result.keys())[0]
@@ -145,11 +200,15 @@ process LIANA_ANALYSIS {
                 'target': ['unknown'],
                 'ligand': ['unknown'],
                 'receptor': ['unknown'],
-                'magnitude': [0.0]
+                'magnitude_rank': [0.0]
             })
     
     log(f"LIANA result DataFrame shape: {liana_result.shape}")
     log(f"LIANA result columns: {list(liana_result.columns)}")
+    
+    # Save a sample of the results for debugging
+    log("Sample of LIANA results:")
+    log(liana_result.head().to_string())
     
     # Filter interactions between sender and receiver
     log("Filtering interactions between specified cell types...")
@@ -160,8 +219,8 @@ process LIANA_ANALYSIS {
     
     log(f"Found {len(filtered_interactions)} interactions between the specified cell types")
     
-    # Determine the correct scoring column
-    score_columns = ['magnitude', 'specificity_score', 'lr_score', 'score']
+    # Determine the correct scoring column - according to the vignette, we should use magnitude_rank
+    score_columns = ['magnitude_rank', 'specificity_rank', 'magnitude', 'specificity_score']
     score_column = None
     for col in score_columns:
         if col in filtered_interactions.columns:
@@ -179,9 +238,12 @@ process LIANA_ANALYSIS {
             score_column = filtered_interactions.columns[0]
             log(f"No numeric columns found, using: {score_column}")
     
+    # For rank columns, lower is better, so we need to sort in ascending order
+    ascending = 'rank' in score_column
+    log(f"Sorting by {score_column} in {'ascending' if ascending else 'descending'} order")
+    
     # Rank by score
-    log(f"Ranking interactions by {score_column}...")
-    ranked_interactions = filtered_interactions.sort_values(by=score_column, ascending=False)
+    ranked_interactions = filtered_interactions.sort_values(by=score_column, ascending=ascending)
     
     # Save full results
     ranked_interactions.to_csv("liana_ranked_interactions.csv", index=False)
@@ -192,24 +254,39 @@ process LIANA_ANALYSIS {
     top_n = min(50, len(ranked_interactions))
     top_lr_pairs = ranked_interactions.head(top_n)
     
-    if 'ligand' in top_lr_pairs.columns and 'receptor' in top_lr_pairs.columns:
-        top_lr_pairs[['ligand', 'receptor']].to_csv("top_lr_pairs_for_nichenet.csv", index=False)
+    # Get the actual ligand/receptor column names
+    # They might be 'ligand'/'receptor' or 'ligand_complex'/'receptor_complex'
+    ligand_cols = [col for col in top_lr_pairs.columns if 'ligand' in col.lower()]
+    receptor_cols = [col for col in top_lr_pairs.columns if 'receptor' in col.lower()]
+    
+    if ligand_cols and receptor_cols:
+        ligand_col = ligand_cols[0]
+        receptor_col = receptor_cols[0]
+        log(f"Using column '{ligand_col}' for ligands and '{receptor_col}' for receptors")
+        top_lr_pairs[[ligand_col, receptor_col]].to_csv("top_lr_pairs_for_nichenet.csv", index=False)
         log(f"Saved top {top_n} L-R pairs to top_lr_pairs_for_nichenet.csv")
     else:
-        log(f"WARNING: 'ligand' or 'receptor' columns not found in results. Available columns: {list(top_lr_pairs.columns)}")
+        log(f"WARNING: Ligand or receptor columns not found. Available columns: {list(top_lr_pairs.columns)}")
         # Create a minimal output file
         pd.DataFrame({'ligand': ['unknown'], 'receptor': ['unknown']}).to_csv("top_lr_pairs_for_nichenet.csv", index=False)
     
-    # Create dotplot visualization
+    # Create dotplot visualization using the API shown in the vignette
     log("Creating visualization...")
     try:
         if hasattr(li, 'pl') and hasattr(li.pl, 'dotplot'):
             log("Using li.pl.dotplot for visualization...")
             li.pl.dotplot(
-                ranked_interactions.head(20),
-                source_groups=["${sender_celltype}"],
-                target_groups=["${receiver_celltype}"],
-                figsize=(12, 10)
+                adata=adata,
+                source_labels=["${sender_celltype}"],
+                target_labels=["${receiver_celltype}"],
+                colour=score_column,
+                size='specificity_rank' if 'specificity_rank' in liana_result.columns else score_column,
+                inverse_size='rank' in score_column,
+                inverse_colour='rank' in score_column,
+                top_n=20,
+                orderby=score_column,
+                orderby_ascending=ascending,
+                figure_size=(12, 10)
             )
             plt.savefig("liana_dotplot.pdf", bbox_inches='tight', dpi=300)
             log("Visualization saved to liana_dotplot.pdf")
@@ -222,8 +299,12 @@ process LIANA_ANALYSIS {
                 top_pairs = ranked_interactions.head(top_n_viz)
                 
                 # Create a simple bar chart
-                pair_labels = [f"{row['ligand']}-{row['receptor']}" if 'ligand' in row and 'receptor' in row else f"Pair {i+1}" 
-                              for i, (_, row) in enumerate(top_pairs.iterrows())]
+                pair_labels = []
+                for _, row in top_pairs.iterrows():
+                    # Try to get ligand-receptor pair label
+                    ligand = row[ligand_cols[0]] if ligand_cols else 'Unknown_Ligand'
+                    receptor = row[receptor_cols[0]] if receptor_cols else 'Unknown_Receptor'
+                    pair_labels.append(f"{ligand}-{receptor}")
                 
                 plt.barh(range(len(pair_labels)), top_pairs[score_column], color='skyblue')
                 plt.yticks(range(len(pair_labels)), pair_labels)
