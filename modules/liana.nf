@@ -36,6 +36,8 @@ process LIANA_ANALYSIS {
     
     # Load AnnData object
     adata = sc.read_h5ad("${input_file}")
+
+    print(f"  Shape: {adata.shape[0]} cells × {adata.shape[1]} genes")
     
     # Strictly check if the specified column exists
     if "${params.celltype_column}" not in adata.obs.columns:
