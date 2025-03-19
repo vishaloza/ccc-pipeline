@@ -87,6 +87,13 @@ process LIANA_ANALYSIS {
         error_msg = f"ERROR: Receiver cell type '${receiver_celltype}' not found in column '{celltype_column}'. Available cell types: {adata.obs[celltype_column].unique()}"
         log(error_msg)
         raise ValueError(error_msg)
+
+    # After loading the AnnData object but before analysis
+    log("Subsetting data to only include sender and receiver cell types...")
+    cell_subset_mask = adata.obs[celltype_column].isin(["${sender_celltype}", "${receiver_celltype}"])
+    adata = adata[cell_subset_mask].copy()
+    log(f"Subset data shape: {adata.shape[0]} cells × {adata.shape[1]} genes")
+    
     
     # Function to prepare the AnnData object using the specified layer
     def prepare_adata(adata, raw_layer=''):
@@ -166,7 +173,8 @@ process LIANA_ANALYSIS {
                     adata.raw = adata
         
         return adata
-    
+
+   
     # Function to check if we're likely working with mouse data
     def is_mouse_data(adata):
         # Sample some genes and check if they look like mouse genes
