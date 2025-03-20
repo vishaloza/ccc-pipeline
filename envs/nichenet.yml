@@ -23,7 +23,10 @@ dependencies:
   - bioconductor-singlecellexperiment>=1.10.0
   - r-reticulate>=1.18
   - r-curl>=4.3
-  - r-spatstat<2.0
+  - r-spatstat.core
+  - r-spatstat.geom
+  - r-spatstat.random
+  - r-spatstat.sparse
   - pip
   - pip:
     - anndata
