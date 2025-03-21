@@ -21,8 +21,7 @@ def helpMessage() {
     
     Usage:
     
-    nextflow run main.nf --input [h5ad file] --sender_celltype [cell type] --receiver_celltype [cell type]
-    
+    nextflow run main.nf --input [h5ad file]
     Required arguments:
       --input              Path to AnnData object (h5ad file)
     
