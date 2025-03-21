@@ -9,8 +9,8 @@ include { VISUALIZE_RESULTS } from './modules/visualize'
 
 // Default parameters
 params.input = null
-params.sender_celltype = null
-params.receiver_celltype = null
+// params.sender_celltype = null
+// params.receiver_celltype = null
 params.outdir = 'results'
 params.help = false
 
@@ -27,8 +27,6 @@ def helpMessage() {
     
     Required arguments:
       --input              Path to AnnData object (h5ad file)
-      --sender_celltype    Sender cell type name
-      --receiver_celltype  Receiver cell type name
     
     Optional arguments:
       --outdir             Output directory (default: 'results')
@@ -37,7 +35,7 @@ def helpMessage() {
 }
 
 // Show help message
-if (params.help || params.input == null || params.sender_celltype == null || params.receiver_celltype == null) {
+if (params.help || params.input == null) {
     helpMessage()
     exit 0
 }
@@ -56,8 +54,6 @@ log.info"""
 LIANA + NicheNet Nextflow Pipeline
 =============================================
 Input file    : ${params.input}
-Sender        : ${params.sender_celltype}
-Receiver      : ${params.receiver_celltype}
 Output dir    : ${params.outdir}
 =============================================
 """
@@ -70,16 +66,16 @@ workflow {
     // Run LIANA analysis
     LIANA_ANALYSIS(
         input_ch,
-        params.sender_celltype,
-        params.receiver_celltype
+        // params.sender_celltype,
+        // params.receiver_celltype
     )
     
     // Run NicheNet analysis
     NICHENET_ANALYSIS(
         LIANA_ANALYSIS.out.h5ad,
         LIANA_ANALYSIS.out.liana_results,
-        params.sender_celltype,
-        params.receiver_celltype
+        // params.sender_celltype,
+        // params.receiver_celltype
     )
     
     // Visualize integrated results
