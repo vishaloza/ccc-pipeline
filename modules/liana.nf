@@ -9,9 +9,7 @@ process LIANA_ANALYSIS {
     
     input:
     path input_file
-    // The sender_celltype and receiver_celltype inputs are no longer used
-    // val sender_celltype
-    // val receiver_celltype
+
     
     output:
     path "for_nichenet.h5ad", emit: h5ad
@@ -73,12 +71,6 @@ process LIANA_ANALYSIS {
     celltype_column = "${params.celltype_column}"
     log(f"Unique values in '{celltype_column}': {adata.obs[celltype_column].unique()}")
     
-    # <<-- REMOVED: Subsetting data to only include specific sender and receiver cell types -->>
-    # Previously:
-    # log("Subsetting data to only include sender and receiver cell types...")
-    # cell_subset_mask = adata.obs[celltype_column].isin(["${sender_celltype}", "${receiver_celltype}"])
-    # adata = adata[cell_subset_mask].copy()
-    # log(f"Subset data shape: {adata.shape[0]} cells × {adata.shape[1]} genes")
     
     # Prepare AnnData object for LIANA using the specified layer if provided
     def prepare_adata(adata, raw_layer=''):
