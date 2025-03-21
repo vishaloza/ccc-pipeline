@@ -34,13 +34,16 @@ process NICHENET_ANALYSIS {
         library(Seurat)
         library(nichenetr)
         library(tidyverse)
-        library(hdf5r)
-        # Try to load SeuratDisk, install if missing
-        if (!requireNamespace("SeuratDisk", quietly = TRUE)) {
-        cat("Installing SeuratDisk package...\n")
-        remotes::install_github("mojaveazure/seurat-disk")
-        library(SeuratDisk)
+        library(reticulate)
+        # Try to load sceasy, install if missing
+        if (!requireNamespace("sceasy", quietly = TRUE)) {
+            cat("Installing sceasy package...\n")
+            if (!requireNamespace("devtools", quietly = TRUE)) {
+                install.packages("devtools")
+            }
+            devtools::install_github("cellgeni/sceasy")
         }
+        library(sceasy)
         
         cat("Libraries loaded successfully\n")
     }, error = function(e) {
@@ -52,25 +55,33 @@ process NICHENET_ANALYSIS {
     # Print the available files for debugging
     cat("Files in current directory:", paste(list.files(), collapse=", "), "\n")
     
-    # Import AnnData and convert to Seurat using SeuratDisk
+    # Import AnnData and convert to Seurat using sceasy
     tryCatch({
-        cat("Converting h5ad to h5Seurat...\n")
-        Convert("${h5ad_file}", dest = "temp.h5seurat")
+        cat("Converting h5ad to Seurat object using sceasy...\n")
+        temp_seurat_file <- "temp_seurat.rds"
         
-        cat("Loading h5Seurat as Seurat object...\n")
-        seurat_obj <- LoadH5Seurat("temp.h5seurat")
+        # Use sceasy to convert AnnData to Seurat
+        sceasy::convertFormat("${h5ad_file}", from="anndata", to="seurat", outFile=temp_seurat_file)
+        
+        cat("Loading Seurat object from RDS...\n")
+        seurat_obj <- readRDS(temp_seurat_file)
         
         cat("Seurat object created with dimensions:", dim(seurat_obj), "\n")
         cat("Cell types detected:", paste(unique(seurat_obj@meta.data\$${params.celltype_column}), collapse=", "), "\n")
     }, error = function(e) {
-        cat("Error converting AnnData to Seurat:", conditionMessage(e), "\n")
+        cat("Error converting AnnData to Seurat with sceasy:", conditionMessage(e), "\n")
         cat("Trying alternative conversion method...\n")
         
-        # Alternative method using SeuratDisk
-        library(SeuratDisk)
-        h5ad_file <- "${h5ad_file}"
-        seurat_obj <- ReadH5AD(h5ad_file)
-        cat("Alternative conversion produced Seurat object with dimensions:", dim(seurat_obj), "\n")
+        # Alternative method attempting basic conversion
+        tryCatch({
+            # Try to use native Seurat conversion
+            library(hdf5r)
+            seurat_obj <- Seurat::ReadH5AD("${h5ad_file}")
+            cat("Alternative conversion produced Seurat object with dimensions:", dim(seurat_obj), "\n")
+        }, error = function(e2) {
+            cat("Both conversion methods failed. Final error:", conditionMessage(e2), "\n")
+            stop("Unable to convert h5ad file to Seurat object")
+        })
     })
     
     # Import LIANA results
