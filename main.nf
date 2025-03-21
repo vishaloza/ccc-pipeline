@@ -9,8 +9,6 @@ include { VISUALIZE_RESULTS } from './modules/visualize'
 
 // Default parameters
 params.input = null
-// params.sender_celltype = null
-// params.receiver_celltype = null
 params.outdir = 'results'
 params.help = false
 
@@ -66,16 +64,12 @@ workflow {
     // Run LIANA analysis
     LIANA_ANALYSIS(
         input_ch,
-        // params.sender_celltype,
-        // params.receiver_celltype
     )
     
     // Run NicheNet analysis
     NICHENET_ANALYSIS(
         LIANA_ANALYSIS.out.h5ad,
         LIANA_ANALYSIS.out.liana_results,
-        // params.sender_celltype,
-        // params.receiver_celltype
     )
     
     // Visualize integrated results
