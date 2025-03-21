@@ -9,8 +9,9 @@ process LIANA_ANALYSIS {
     
     input:
     path input_file
-    val sender_celltype
-    val receiver_celltype
+    // The sender_celltype and receiver_celltype inputs are no longer used
+    // val sender_celltype
+    // val receiver_celltype
     
     output:
     path "for_nichenet.h5ad", emit: h5ad
@@ -47,10 +48,8 @@ process LIANA_ANALYSIS {
     log("Starting LIANA analysis")
     log(f"Working directory: {os.getcwd()}")
     log(f"Input file: ${input_file}")
-    log(f"Sender: ${sender_celltype}")
-    log(f"Receiver: ${receiver_celltype}")
     log(f"Cell type column: ${params.celltype_column}")
-    log(f"Raw layer: '${raw_layer}'")
+    log(f"Raw layer: '{raw_layer}'")
     log(f"Use raw: ${use_raw}")
     
     # Print LIANA version and available modules
@@ -71,130 +70,74 @@ process LIANA_ANALYSIS {
         log(error_msg)
         raise ValueError(error_msg)
     
-    # Use exactly the specified column
     celltype_column = "${params.celltype_column}"
-    
-    # Print unique values in the cell type column for debugging
     log(f"Unique values in '{celltype_column}': {adata.obs[celltype_column].unique()}")
     
-    # Check if the sender and receiver cell types exist in the specified column
-    if "${sender_celltype}" not in adata.obs[celltype_column].unique():
-        error_msg = f"ERROR: Sender cell type '${sender_celltype}' not found in column '{celltype_column}'. Available cell types: {adata.obs[celltype_column].unique()}"
-        log(error_msg)
-        raise ValueError(error_msg)
+    # <<-- REMOVED: Subsetting data to only include specific sender and receiver cell types -->>
+    # Previously:
+    # log("Subsetting data to only include sender and receiver cell types...")
+    # cell_subset_mask = adata.obs[celltype_column].isin(["${sender_celltype}", "${receiver_celltype}"])
+    # adata = adata[cell_subset_mask].copy()
+    # log(f"Subset data shape: {adata.shape[0]} cells × {adata.shape[1]} genes")
     
-    if "${receiver_celltype}" not in adata.obs[celltype_column].unique():
-        error_msg = f"ERROR: Receiver cell type '${receiver_celltype}' not found in column '{celltype_column}'. Available cell types: {adata.obs[celltype_column].unique()}"
-        log(error_msg)
-        raise ValueError(error_msg)
-
-    # After loading the AnnData object but before analysis
-    log("Subsetting data to only include sender and receiver cell types...")
-    cell_subset_mask = adata.obs[celltype_column].isin(["${sender_celltype}", "${receiver_celltype}"])
-    adata = adata[cell_subset_mask].copy()
-    log(f"Subset data shape: {adata.shape[0]} cells × {adata.shape[1]} genes")
-    
-    
-    # Function to prepare the AnnData object using the specified layer
+    # Prepare AnnData object for LIANA using the specified layer if provided
     def prepare_adata(adata, raw_layer=''):
         log("Preparing AnnData object for LIANA...")
-        
-        # Check if .raw exists
         has_raw = hasattr(adata, 'raw') and adata.raw is not None
         log(f"AnnData has .raw attribute: {has_raw}")
-        
-        # Check what's available
         log(f"AnnData available slots: X={adata.X is not None}, raw.X={has_raw and adata.raw.X is not None}, layers={list(adata.layers.keys()) if hasattr(adata, 'layers') else None}")
-        
-        # If raw_layer is specified and exists, use that
         if raw_layer and raw_layer in adata.layers:
             log(f"Using specified layer '{raw_layer}' as raw data")
-            # Store original X
             original_X = adata.X.copy()
-            # Set this layer as X
             adata.X = adata.layers[raw_layer].copy()
-            # Create raw or replace existing raw
             adata.raw = adata
-            # Restore X
             adata.X = original_X
             return adata
-        
-        # If .raw is missing, create it
         if not has_raw:
             log("No .raw found - setting up raw data")
-            
-            # If there are no layers, the primary data is in .X
             if not hasattr(adata, 'layers') or len(adata.layers) == 0:
                 log("No layers found. Setting .X as .raw")
-                # First check if the data looks like it's already log-transformed
                 if isinstance(adata.X, np.ndarray):
                     max_val = adata.X.max()
-                else:  # Sparse matrix
+                else:
                     max_val = adata.X.data.max() if hasattr(adata.X, 'data') else adata.X.max()
-                
-                if max_val < 30:  # Heuristic: log-transformed data usually has small values
+                if max_val < 30:
                     log("Data appears to be log-transformed. Creating .raw with original .X (without de-logging)")
                     adata.raw = adata
                 else:
                     log("Data appears to be raw counts. Creating .raw with original .X")
                     adata.raw = adata
-            
-            # If 'counts' layer exists, use that
             elif 'counts' in adata.layers:
                 log("Using 'counts' layer for raw data")
-                # Store a copy of the original AnnData
                 adata_orig = adata.copy()
-                # Set the counts layer as the main data
                 adata.X = adata.layers['counts'].copy()
-                # Store as raw
                 adata.raw = adata
-                # Restore the original X
                 adata.X = adata_orig.X.copy()
-            
-            # If no counts layer but we have other layers, try to find raw-like data
             else:
                 log(f"No counts layer found. Available layers: {list(adata.layers.keys())}")
-                # Look for layers that might be raw counts
                 for layer_name in adata.layers.keys():
                     if 'count' in layer_name.lower() or 'raw' in layer_name.lower() or 'umi' in layer_name.lower():
                         log(f"Using '{layer_name}' layer for raw data as it seems to contain counts")
-                        # Store original X
                         original_X = adata.X.copy()
-                        # Set this layer as X
                         adata.X = adata.layers[layer_name].copy()
-                        # Create raw
                         adata.raw = adata
-                        # Restore X
                         adata.X = original_X
                         break
                 else:
-                    # No suitable layer found, use X and create a warning
                     log("WARNING: No suitable raw counts found. Using .X for .raw as fallback")
                     adata.raw = adata
-        
         return adata
 
-   
-    # Function to check if we're likely working with mouse data
     def is_mouse_data(adata):
-        # Sample some genes and check if they look like mouse genes
         var_names = adata.var_names.tolist()
-        # Mouse genes often start with uppercase but aren't all uppercase (unlike human)
         mouse_pattern = sum(1 for g in var_names[:100] if g[0].isupper() and not g.isupper())
-        # Check for known mouse marker genes
         mouse_markers = ['Cd4', 'Cd8a', 'Epcam', 'Ptprc', 'Cd3e']
         mouse_markers_present = sum(1 for g in mouse_markers if g in var_names)
-        
-        # Human genes are typically all uppercase
         human_pattern = sum(1 for g in var_names[:100] if g.isupper())
         human_markers = ['CD4', 'CD8A', 'EPCAM', 'PTPRC', 'CD3E']
         human_markers_present = sum(1 for g in human_markers if g in var_names)
-        
-        # Log the evidence
         log(f"Mouse evidence: pattern={mouse_pattern}/100, markers={mouse_markers_present}/{len(mouse_markers)}")
         log(f"Human evidence: pattern={human_pattern}/100, markers={human_markers_present}/{len(human_markers)}")
-        
-        # More mouse-like than human-like?
         if mouse_pattern > human_pattern or mouse_markers_present > human_markers_present:
             log("Data appears to be from mouse based on gene name patterns")
             return True
@@ -202,40 +145,26 @@ process LIANA_ANALYSIS {
             log("Data appears to be from human based on gene name patterns")
             return False
     
-    # Prepare AnnData object for LIANA using specified layer if provided
     adata = prepare_adata(adata, raw_layer="${raw_layer}")
-    
-    # Check if we're working with mouse data and translate resources if needed
     is_mouse = is_mouse_data(adata)
-    
-    # Create a resource variable to potentially hold mouse-translated resources
     mouse_resource = None
-    
-    # If it's mouse data, translate the resources
     if is_mouse:
         log("Translating LIANA resources for mouse data...")
         try:
-            # Try to select the resource using the correct method
             log("Selecting consensus resource...")
             resource = None
-            
             try:
-                # First try the select_resource method
                 resource = li.rs.select_resource('consensus')
                 log("Successfully selected resource using li.rs.select_resource")
             except Exception as e:
                 log(f"Error with select_resource: {str(e)}")
-                # Try alternative methods
                 try:
-                    # Some versions have a get_resource method
                     if hasattr(li.rs, 'get_resource'):
                         resource = li.rs.get_resource()
                         log("Successfully got resource using li.rs.get_resource")
-                    # Others might just have a resources dictionary
                     elif hasattr(li.rs, 'resources'):
                         resource = li.rs.resources.get('consensus', li.rs.resources['cellphonedb'])
                         log("Got resource from li.rs.resources dictionary")
-                    # Last resort - get it from omnipath if available
                     elif hasattr(li, 'omnipathR'):
                         resource = li.omnipathR.get_resource('consensus')
                         log("Got resource using li.omnipathR")
@@ -245,67 +174,48 @@ process LIANA_ANALYSIS {
                 except Exception as e2:
                     log(f"All resource methods failed: {str(e2)}")
                     raise
-            
             if resource is None:
                 raise ValueError("Could not load resource")
-                
             log("Getting human-mouse homolog mapping...")
-            # Get homolog mapping
             map_df = li.rs.get_hcop_orthologs(
                 url='https://ftp.ebi.ac.uk/pub/databases/genenames/hcop/human_mouse_hcop_fifteen_column.txt.gz',
                 columns=['human_symbol', 'mouse_symbol'],
-                min_evidence=3  # Require at least 3 resources to support the mapping
+                min_evidence=3
             )
-            
-            # Save the mapping for reference
             map_df.to_csv("homolog_mapping.csv", index=False)
             log(f"Saved homolog mapping with {len(map_df)} entries to homolog_mapping.csv")
-            
-            # Rename columns for translation
             map_df = map_df.rename(columns={'human_symbol': 'source', 'mouse_symbol': 'target'})
-            
             log("Translating resources to mouse...")
-            # Translate resources
             mouse_resource = li.rs.translate_resource(
                 resource,
                 map_df=map_df,
                 columns=['ligand', 'receptor'],
                 replace=True,
-                one_to_many=1  # Only keep 1-to-1 mappings
+                one_to_many=1
             )
-            
             log(f"Translated resource has {len(mouse_resource)} entries")
-            
         except Exception as e:
             log(f"Error translating resources for mouse: {str(e)}")
             log(traceback.format_exc())
             log("WARNING: Will proceed with human resources, results may be suboptimal")
     
-    # Convert use_raw string parameter to boolean
     use_raw_bool = "${use_raw}".lower() == 'true'
     log(f"Using use_raw={use_raw_bool} for LIANA analysis")
     
-    # Run LIANA - try different approaches based on errors
     log("Running LIANA analysis...")
-    
-    # Define the methods to try, in order of preference
     methods_to_try = []
-    
-    # If we have mouse resources, try using those first
     if is_mouse and mouse_resource is not None:
         methods_to_try.append(
             ("li.mt.rank_aggregate with mouse resource", 
              lambda: li.mt.rank_aggregate(
                  adata, 
                  groupby=celltype_column, 
-                 resource=mouse_resource,  # Use our translated resource
+                 resource=mouse_resource,
                  expr_prop=0.1, 
                  verbose=True, 
                  use_raw=use_raw_bool
              ))
         )
-    
-    # Add standard methods as fallbacks
     methods_to_try.extend([
         ("li.mt.rank_aggregate with specified use_raw", 
          lambda: li.mt.rank_aggregate(
@@ -316,7 +226,6 @@ process LIANA_ANALYSIS {
              verbose=True, 
              use_raw=use_raw_bool
          )),
-        
         ("li.mt.rank_aggregate with opposite use_raw", 
          lambda: li.mt.rank_aggregate(
              adata, 
@@ -326,7 +235,6 @@ process LIANA_ANALYSIS {
              verbose=True, 
              use_raw=(not use_raw_bool)
          )),
-        
         ("li.pipe with specified use_raw", 
          lambda: li.pipe(
              adata, 
@@ -336,7 +244,6 @@ process LIANA_ANALYSIS {
              verbose=True, 
              use_raw=use_raw_bool
          )),
-        
         ("li.pipe with opposite use_raw", 
          lambda: li.pipe(
              adata, 
@@ -346,23 +253,15 @@ process LIANA_ANALYSIS {
              verbose=True, 
              use_raw=(not use_raw_bool)
          )),
-        
         ("Simple manual approach", 
          lambda: run_liana_manual(adata, celltype_column))
     ])
     
-    # Define a simple manual approach as last resort
     def run_liana_manual(adata, celltype_column):
         log("Running simple manual analysis as fallback...")
-        # Create a basic result DataFrame with ligand-receptor pairs
-        # This is a simplified version just to enable pipeline completion
         import itertools
-        
-        # Get cell types and genes
         cell_types = adata.obs[celltype_column].unique()
         genes = adata.var_names.tolist()
-        
-        # Sample 100 random genes as "ligands" and "receptors"
         import random
         if len(genes) > 100:
             random_genes = random.sample(genes, 100)
@@ -371,13 +270,11 @@ process LIANA_ANALYSIS {
         else:
             ligands = genes[:len(genes)//2]
             receptors = genes[len(genes)//2:]
-        
-        # Create simple L-R pairs
         pairs = []
         for ligand, receptor in zip(ligands[:10], receptors[:10]):
             for source in cell_types:
                 for target in cell_types:
-                    if source != target:  # Avoid self-interactions for simplicity
+                    if source != target:
                         pairs.append({
                             'source': source,
                             'target': target,
@@ -386,19 +283,12 @@ process LIANA_ANALYSIS {
                             'magnitude': np.random.random(),
                             'specificity_score': np.random.random()
                         })
-        
-        # Create DataFrame
         results_df = pd.DataFrame(pairs)
-        
-        # Add ranks
         results_df['magnitude_rank'] = results_df.groupby(['source', 'target'])['magnitude'].rank(ascending=False)
         results_df['specificity_rank'] = results_df.groupby(['source', 'target'])['specificity_score'].rank(ascending=False)
-        
-        # Store in the AnnData object
         adata.uns['liana_res'] = results_df
         return results_df
     
-    # Try each method until one works
     liana_success = False
     for method_name, method_func in methods_to_try:
         log(f"Trying LIANA method: {method_name}")
@@ -413,38 +303,27 @@ process LIANA_ANALYSIS {
     
     if not liana_success:
         log("WARNING: All LIANA methods failed. Using fallback approach.")
-        # Create a minimal working result to allow pipeline to continue
         run_liana_manual(adata, celltype_column)
     
-    # Get the results from adata.uns
     log("Extracting LIANA results...")
-    
-    # Check if results are in adata.uns
     if 'liana_res' in adata.uns:
         log("Found liana_res in adata.uns")
         liana_result = adata.uns['liana_res']
     else:
         log(f"WARNING: liana_res not found in adata.uns")
-        log(f"Available keys in adata.uns: {list(adata.uns.keys())}")
-        
-        # Try to find any LIANA-related results
         liana_keys = [key for key in adata.uns.keys() if 'liana' in key.lower()]
         if liana_keys:
             log(f"Found potential LIANA result keys: {liana_keys}")
             liana_result = adata.uns[liana_keys[0]]
         else:
-            # Last resort - create dummy results
             log("No LIANA results found. Creating dummy results.")
             liana_result = run_liana_manual(adata, celltype_column)
     
     log(f"Result type: {type(liana_result)}")
-    
-    # Convert to DataFrame if needed
     if not isinstance(liana_result, pd.DataFrame):
         log("Converting LIANA results to DataFrame...")
         try:
             if isinstance(liana_result, dict):
-                # Try to find the aggregated results
                 if 'aggregated' in liana_result:
                     liana_result = liana_result['aggregated']
                     log("Using 'aggregated' results from dictionary")
@@ -452,7 +331,6 @@ process LIANA_ANALYSIS {
                     liana_result = liana_result['consensus']
                     log("Using 'consensus' results from dictionary")
                 elif len(liana_result) > 0:
-                    # Take the first item if it's a dict of DataFrames
                     first_key = list(liana_result.keys())[0]
                     liana_result = liana_result[first_key]
                     log(f"Using results from key: {first_key}")
@@ -462,43 +340,18 @@ process LIANA_ANALYSIS {
                 raise TypeError(f"Unexpected LIANA result type: {type(liana_result)}")
         except Exception as e:
             log(f"Error processing LIANA results: {str(e)}")
-            # Create a minimal result set to continue
             liana_result = run_liana_manual(adata, celltype_column)
     
     log(f"LIANA result DataFrame shape: {liana_result.shape}")
     log(f"LIANA result columns: {list(liana_result.columns)}")
-    
-    # Save a sample of the results for debugging
     log("Sample of LIANA results:")
     log(str(liana_result.head()))
     
-    # Filter interactions between sender and receiver
-    log("Filtering interactions between specified cell types...")
-    filtered_interactions = liana_result[
-        ((liana_result['source'] == "${sender_celltype}") & (liana_result['target'] == "${receiver_celltype}")) |
-        ((liana_result['source'] == "${receiver_celltype}") & (liana_result['target'] == "${sender_celltype}"))
-    ]
+    # <<-- MODIFIED: Do not filter by sender/receiver. Use all interactions -->>
+    filtered_interactions = liana_result
+    log(f"Using all {len(filtered_interactions)} interactions from the full dataset")
     
-    log(f"Found {len(filtered_interactions)} interactions between the specified cell types")
-    
-    # If no interactions found, create some dummy data to allow pipeline to continue
-    if len(filtered_interactions) == 0:
-        log("WARNING: No interactions found between specified cell types. Creating dummy interactions.")
-        dummy_interactions = []
-        for i in range(10):
-            dummy_interactions.append({
-                'source': "${sender_celltype}",
-                'target': "${receiver_celltype}",
-                'ligand': f"Ligand_{i+1}",
-                'receptor': f"Receptor_{i+1}",
-                'magnitude': 1.0 - (i*0.1),
-                'specificity_score': 1.0 - (i*0.1),
-                'magnitude_rank': i+1,
-                'specificity_rank': i+1
-            })
-        filtered_interactions = pd.DataFrame(dummy_interactions)
-    
-    # Determine the correct scoring column - according to the vignette, we should use magnitude_rank
+    # Determine the scoring column
     score_columns = ['magnitude_rank', 'specificity_rank', 'magnitude', 'specificity_score']
     score_column = None
     for col in score_columns:
@@ -506,9 +359,7 @@ process LIANA_ANALYSIS {
             score_column = col
             log(f"Using score column: {score_column}")
             break
-    
     if score_column is None:
-        # Fall back to the first numeric column
         numeric_cols = filtered_interactions.select_dtypes(include=['float64', 'int64']).columns
         if len(numeric_cols) > 0:
             score_column = numeric_cols[0]
@@ -517,24 +368,17 @@ process LIANA_ANALYSIS {
             score_column = filtered_interactions.columns[0]
             log(f"No numeric columns found, using: {score_column}")
     
-    # For rank columns, lower is better, so we need to sort in ascending order
     ascending = 'rank' in score_column
     log(f"Sorting by {score_column} in {'ascending' if ascending else 'descending'} order")
-    
-    # Rank by score
     ranked_interactions = filtered_interactions.sort_values(by=score_column, ascending=ascending)
     
-    # Save full results
     ranked_interactions.to_csv("liana_ranked_interactions.csv", index=False)
     log("Saved ranked interactions to liana_ranked_interactions.csv")
     
-    # Extract top ligand-receptor pairs
     log("Extracting top ligand-receptor pairs...")
     top_n = min(50, len(ranked_interactions))
     top_lr_pairs = ranked_interactions.head(top_n)
     
-    # Get the actual ligand/receptor column names
-    # They might be 'ligand'/'receptor' or 'ligand_complex'/'receptor_complex'
     ligand_cols = [col for col in top_lr_pairs.columns if 'ligand' in col.lower()]
     receptor_cols = [col for col in top_lr_pairs.columns if 'receptor' in col.lower()]
     
@@ -546,22 +390,22 @@ process LIANA_ANALYSIS {
         log(f"Saved top {top_n} L-R pairs to top_lr_pairs_for_nichenet.csv")
     else:
         log(f"WARNING: Ligand or receptor columns not found. Available columns: {list(top_lr_pairs.columns)}")
-        # Create a minimal output file
         pd.DataFrame({'ligand': ['unknown'], 'receptor': ['unknown']}).to_csv("top_lr_pairs_for_nichenet.csv", index=False)
     
-    # Create dotplot visualization using the API shown in the vignette
+    # <<-- MODIFIED: For dotplot, include all cell types -->>
     log("Creating visualization...")
     try:
         if hasattr(li, 'pl') and hasattr(li.pl, 'dotplot'):
             log("Using li.pl.dotplot for visualization...")
-            
-            # Check if we can use the adata object with dotplot
+            # Use all unique cell types
+            all_cell_types = sorted(adata.obs[celltype_column].unique().tolist())
+            log(f"Using cell types for visualization: {all_cell_types}")
             if 'liana_res' in adata.uns and len(adata.uns['liana_res']) > 0:
                 log("Using adata object with dotplot")
                 li.pl.dotplot(
                     adata=adata,
-                    source_labels=["${sender_celltype}"],
-                    target_labels=["${receiver_celltype}"],
+                    source_labels=all_cell_types,
+                    target_labels=all_cell_types,
                     colour=score_column,
                     size='specificity_rank' if 'specificity_rank' in liana_result.columns else score_column,
                     inverse_size='rank' in score_column,
@@ -572,60 +416,48 @@ process LIANA_ANALYSIS {
                     figure_size=(12, 10)
                 )
             else:
-                # Use the dataframe directly with dotplot
                 log("Using filtered interactions dataframe with dotplot")
                 li.pl.dotplot(
                     ranked_interactions.head(min(20, len(ranked_interactions))),
-                    source_groups=["${sender_celltype}"],
-                    target_groups=["${receiver_celltype}"],
+                    source_groups=all_cell_types,
+                    target_groups=all_cell_types,
                     figsize=(12, 10)
                 )
-                
             plt.savefig("liana_dotplot.pdf", bbox_inches='tight', dpi=300)
             log("Visualization saved to liana_dotplot.pdf")
         else:
             log("LIANA dotplot function not available, creating a basic plot")
             plt.figure(figsize=(12, 10))
-            
             if len(ranked_interactions) > 0:
                 top_n_viz = min(20, len(ranked_interactions))
                 top_pairs = ranked_interactions.head(top_n_viz)
-                
-                # Create a simple bar chart
                 pair_labels = []
                 for _, row in top_pairs.iterrows():
-                    # Try to get ligand-receptor pair label
                     ligand = row[ligand_cols[0]] if ligand_cols else 'Unknown_Ligand'
                     receptor = row[receptor_cols[0]] if receptor_cols else 'Unknown_Receptor'
                     pair_labels.append(f"{ligand}-{receptor}")
-                
                 plt.barh(range(len(pair_labels)), top_pairs[score_column], color='skyblue')
                 plt.yticks(range(len(pair_labels)), pair_labels)
                 plt.xlabel(score_column)
                 plt.ylabel('Ligand-Receptor Pair')
-                plt.title(f'Top {top_n_viz} L-R Interactions between {sender_celltype} and {receiver_celltype}')
+                plt.title(f'Top {top_n_viz} L-R Interactions across all cell types')
             else:
-                plt.text(0.5, 0.5, f"No interactions found between {sender_celltype} and {receiver_celltype}",
+                plt.text(0.5, 0.5, "No interactions found in the dataset",
                         horizontalalignment='center', verticalalignment='center')
-            
             plt.tight_layout()
             plt.savefig("liana_dotplot.pdf", bbox_inches='tight', dpi=300)
             log("Basic visualization saved to liana_dotplot.pdf")
     except Exception as e:
         log(f"Error creating visualization: {str(e)}")
-        # Create a simple error notification plot
         plt.figure(figsize=(8, 6))
         plt.text(0.5, 0.5, f"Error creating visualization: {str(e)}",
                 horizontalalignment='center', verticalalignment='center')
         plt.savefig("liana_dotplot.pdf", bbox_inches='tight')
         log("Error notification saved to liana_dotplot.pdf")
     
-    # Export AnnData for NicheNet
     log(f"Writing AnnData to: {os.getcwd()}/for_nichenet.h5ad")
     adata.write_h5ad("for_nichenet.h5ad")
     log("LIANA analysis complete!")
-    
-    # Close log file
     log_file.close()
     """
 }
