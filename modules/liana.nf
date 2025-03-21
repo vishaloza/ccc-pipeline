@@ -35,6 +35,11 @@ process LIANA_ANALYSIS {
     import time
     import traceback
 
+    # Define variables from Nextflow parameters via interpolation
+    raw_layer = "${params.raw_layer ?: ''}"
+    use_raw = "${params.use_raw ?: 'true'}"
+
+
     # Set up logging
     log_file = open("liana_debug.log", "w")
     def log(msg):
