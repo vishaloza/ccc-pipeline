@@ -35,7 +35,12 @@ process NICHENET_ANALYSIS {
         library(nichenetr)
         library(tidyverse)
         library(hdf5r)
+        # Try to load SeuratDisk, install if missing
+        if (!requireNamespace("SeuratDisk", quietly = TRUE)) {
+        cat("Installing SeuratDisk package...\n")
+        remotes::install_github("mojaveazure/seurat-disk")
         library(SeuratDisk)
+        }
         
         cat("Libraries loaded successfully\n")
     }, error = function(e) {
