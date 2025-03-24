@@ -38,6 +38,7 @@ process LIANA_ANALYSIS {
     import importlib
     import time
     import traceback
+    import scipy.sparse
 
     # Define variables from Nextflow parameters via interpolation
     raw_layer = "${params.raw_layer ?: ''}"
