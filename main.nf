@@ -67,6 +67,7 @@ workflow {
     
     // Run NicheNet analysis
     NICHENET_ANALYSIS(
+        LIANA_ANALYSIS.out.h5ad_file,
         LIANA_ANALYSIS.out.raw_expr,
         LIANA_ANALYSIS.out.norm_expr,
         LIANA_ANALYSIS.out.cell_meta,
