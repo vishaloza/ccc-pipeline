@@ -124,9 +124,9 @@ process LIANA_ANALYSIS {
                         adata.raw = adata
                         adata.X = original_X
                         break
-                else:
-                    log("WARNING: No suitable raw counts found. Using .X for .raw as fallback")
-                    adata.raw = adata
+                    else:
+                        log("WARNING: No suitable raw counts found. Using .X for .raw as fallback")
+                        adata.raw = adata
         return adata
 
     def is_mouse_data(adata):
@@ -468,8 +468,8 @@ process LIANA_ANALYSIS {
             index=adata.obs_names,
             columns=adata.raw.var_names
         )
-    raw_expr.to_csv("raw_expression_matrix.csv")
-    log(f"Saved raw expression matrix with shape {raw_expr.shape}")
+        raw_expr.to_csv("raw_expression_matrix.csv")
+        log(f"Saved raw expression matrix with shape {raw_expr.shape}")
     else:
         # If no raw data, use whatever is available
         raw_expr = pd.DataFrame(
