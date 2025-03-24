@@ -471,24 +471,24 @@ process LIANA_ANALYSIS {
     raw_expr.to_csv("raw_expression_matrix.csv")
     log(f"Saved raw expression matrix with shape {raw_expr.shape}")
     else:
-    # If no raw data, use whatever is available
-    raw_expr = pd.DataFrame(
+        # If no raw data, use whatever is available
+        raw_expr = pd.DataFrame(
         adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X,
         index=adata.obs_names,
         columns=adata.var_names
-    )
-    raw_expr.to_csv("raw_expression_matrix.csv")
-    log(f"No raw data found. Saved expression matrix with shape {raw_expr.shape}")
+        )
+        raw_expr.to_csv("raw_expression_matrix.csv")
+        log(f"No raw data found. Saved expression matrix with shape {raw_expr.shape}")
 
     # Export normalized data if different from raw
     if hasattr(adata, 'raw') and adata.raw is not None:
-    norm_expr = pd.DataFrame(
-        adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X,
-        index=adata.obs_names,
-        columns=adata.var_names
-    )
-    norm_expr.to_csv("normalized_expression_matrix.csv")
-    log(f"Saved normalized expression matrix with shape {norm_expr.shape}")
+        norm_expr = pd.DataFrame(
+            adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X,
+            index=adata.obs_names,
+            columns=adata.var_names
+        )
+        norm_expr.to_csv("normalized_expression_matrix.csv")
+        log(f"Saved normalized expression matrix with shape {norm_expr.shape}")
 
     # Export cell metadata
     adata.obs.to_csv("cell_metadata.csv")
