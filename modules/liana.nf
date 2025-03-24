@@ -13,11 +13,15 @@ process LIANA_ANALYSIS {
     
     output:
     path "for_nichenet.h5ad", emit: h5ad
-    path "liana_ranked_interactions.csv", emit: liana_results
-    path "top_lr_pairs_for_nichenet.csv", emit: top_lr_pairs
+    path "raw_expression_matrix.csv", emit: raw_expr
+    path "normalized_expression_matrix.csv", optional: true, emit: norm_expr
+    path "cell_metadata.csv", emit: cell_meta
+    path "gene_metadata.csv", emit: gene_meta
+    path "liana_ranked_interactions.csv", emit: liana_results  // Full set of interactions
+    path "liana_top_interactions.csv", emit: top_lr_pairs     // Top N for reference
     path "liana_dotplot.pdf", emit: dotplot
     path "liana_debug.log"
-    path "homolog_mapping.csv" optional true
+    path "homolog_mapping.csv", optional: true
     
     script:
     def raw_layer = params.raw_layer ?: ''
@@ -452,7 +456,62 @@ process LIANA_ANALYSIS {
         plt.savefig("liana_dotplot.pdf", bbox_inches='tight')
         log("Error notification saved to liana_dotplot.pdf")
     
-    log(f"Writing AnnData to: {os.getcwd()}/for_nichenet.h5ad")
+    # Add this before the final line in liana.nf
+    log("Exporting complete data for NicheNet analysis...")
+
+    # Export full expression matrix
+    log("Exporting expression matrix...")
+    if hasattr(adata, 'raw') and adata.raw is not None:
+        # Export raw counts for NicheNet
+        raw_expr = pd.DataFrame(
+            adata.raw.X.toarray() if scipy.sparse.issparse(adata.raw.X) else adata.raw.X,
+            index=adata.obs_names,
+            columns=adata.raw.var_names
+        )
+    raw_expr.to_csv("raw_expression_matrix.csv")
+    log(f"Saved raw expression matrix with shape {raw_expr.shape}")
+    else:
+    # If no raw data, use whatever is available
+    raw_expr = pd.DataFrame(
+        adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X,
+        index=adata.obs_names,
+        columns=adata.var_names
+    )
+    raw_expr.to_csv("raw_expression_matrix.csv")
+    log(f"No raw data found. Saved expression matrix with shape {raw_expr.shape}")
+
+    # Export normalized data if different from raw
+    if hasattr(adata, 'raw') and adata.raw is not None:
+    norm_expr = pd.DataFrame(
+        adata.X.toarray() if scipy.sparse.issparse(adata.X) else adata.X,
+        index=adata.obs_names,
+        columns=adata.var_names
+    )
+    norm_expr.to_csv("normalized_expression_matrix.csv")
+    log(f"Saved normalized expression matrix with shape {norm_expr.shape}")
+
+    # Export cell metadata
+    adata.obs.to_csv("cell_metadata.csv")
+    log(f"Saved cell metadata with {adata.obs.shape[1]} columns")
+
+    # Export gene metadata
+    adata.var.to_csv("gene_metadata.csv")
+    log(f"Saved gene metadata with {adata.var.shape[1]} columns")
+
+    # Export all ligand-receptor pairs (not just top ones)
+    log("Exporting all ranked ligand-receptor interactions...")
+    ranked_interactions.to_csv("liana_ranked_interactions.csv", index=False)
+    log(f"Saved all {len(ranked_interactions)} L-R interactions for NicheNet")
+
+    # Also export a subset of top interactions for quick reference
+    top_n = min(100, len(ranked_interactions))
+    top_lr_pairs = ranked_interactions.head(top_n)
+    top_lr_pairs.to_csv("liana_top_interactions.csv", index=False)
+    log(f"Saved top {top_n} L-R interactions for reference")
+
+
+    # Still write the h5ad as a fallback, but main data is in CSVs
+    log(f"Writing AnnData to {os.getcwd()}/for_nichenet.h5ad as fallback")
     adata.write_h5ad("for_nichenet.h5ad")
     log("LIANA analysis complete!")
     log_file.close()
