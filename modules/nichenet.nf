@@ -9,7 +9,12 @@ process NICHENET_ANALYSIS {
     
     input:
     path h5ad_file
+    path raw_expr
+    path norm_expr
+    path cell_meta
+    path gene_meta
     path liana_results
+    path top_lr_pairs
     
     output:
     path "nichenet_results_from_liana.rds", emit: nichenet_results
@@ -30,17 +35,7 @@ process NICHENET_ANALYSIS {
         library(Seurat)
         library(nichenetr)
         library(tidyverse)
-        library(reticulate)
-        # Try to load sceasy, install if missing
-        if (!requireNamespace("sceasy", quietly = TRUE)) {
-            cat("Installing sceasy package...\\n")
-            if (!requireNamespace("devtools", quietly = TRUE)) {
-                install.packages("devtools")
-            }
-            devtools::install_github("cellgeni/sceasy")
-        }
-        library(sceasy)
-        
+        library(reticulate)       
         cat("Libraries loaded successfully\\n")
     }, error = function(e) {
         cat("Error loading libraries:", conditionMessage(e), "\\n")
@@ -51,37 +46,77 @@ process NICHENET_ANALYSIS {
     # Print the available files for debugging
     cat("Files in current directory:", paste(list.files(), collapse=", "), "\\n")
     
-    # Import AnnData and convert to Seurat using sceasy
+    # Import expression output and convert to Seurat 
     tryCatch({
-        cat("Converting h5ad to Seurat object using sceasy...\\n")
-        temp_seurat_file <- "temp_seurat.rds"
+        cat("Loading data from CSV files...\n")
         
-        # Use sceasy to convert AnnData to Seurat
-        sceasy::convertFormat("${h5ad_file}", from="anndata", to="seurat", outFile=temp_seurat_file)
+        # Check if files exist
+        raw_expression_file <- "raw_expression_matrix.csv"
+        normalized_expression_file <- "normalized_expression_matrix.csv"
+        cell_metadata_file <- "cell_metadata.csv"
+        gene_metadata_file <- "gene_metadata.csv"
         
-        cat("Loading Seurat object from RDS...\\n")
-        seurat_obj <- readRDS(temp_seurat_file)
+        files_exist <- file.exists(raw_expression_file) && file.exists(cell_metadata_file)
         
-        cat("Seurat object created with dimensions:", dim(seurat_obj), "\\n")
-        cat("Cell types detected:", paste(unique(seurat_obj@meta.data\$${params.celltype_column}), collapse=", "), "\\n")
+        if (!files_exist) {
+            stop("Required CSV files not found. Make sure LIANA exported the necessary data files.")
+        }
+        
+        # Read raw expression matrix
+        cat("Reading raw expression matrix...\n")
+        raw_expr <- read.csv(raw_expression_file, row.names=1, check.names=FALSE)
+        
+        # Read cell metadata
+        cat("Reading cell metadata...\n")  
+        cell_metadata <- read.csv(cell_metadata_file, row.names=1, check.names=FALSE)
+        
+        # Check if normalized data exists and read it
+        if (file.exists(normalized_expression_file)) {
+            cat("Reading normalized expression matrix...\n")
+            norm_expr <- read.csv(normalized_expression_file, row.names=1, check.names=FALSE)
+        } else {
+            norm_expr <- NULL
+        }
+        
+        # Create Seurat object with raw counts
+        cat("Creating Seurat object...\n")
+        seurat_obj <- CreateSeuratObject(counts = t(raw_expr), meta.data = cell_metadata)
+        
+        # If normalized data exists, add it as the scaled data
+        if (!is.null(norm_expr)) {
+            cat("Adding normalized data to Seurat object...\n")
+            seurat_obj[["RNA"]]@data <- as.matrix(t(norm_expr))
+        }
+        
+        cat("Seurat object created with dimensions:", dim(seurat_obj), "\n")
+        cat("Cell types detected:", paste(unique(seurat_obj@meta.data[[cell_type_column]]), collapse=", "), "\n")
     }, error = function(e) {
-        cat("Error converting h5ad to Seurat with sceasy:", conditionMessage(e), "\\n")
-        cat("Trying alternative conversion method...\\n")
+        cat("Error loading CSV data:", conditionMessage(e), "\n")
         
-        # Alternative method attempting basic conversion
+        # Try to load h5ad as fallback
+        cat("Attempting to load h5ad as fallback...\n")
         tryCatch({
             library(hdf5r)
             seurat_obj <- Seurat::ReadH5AD("${h5ad_file}")
-            cat("Alternative conversion produced Seurat object with dimensions:", dim(seurat_obj), "\\n")
+            cat("Successfully loaded h5ad file as fallback\n")
         }, error = function(e2) {
-            cat("Both conversion methods failed. Final error:", conditionMessage(e2), "\\n")
-            stop("Unable to convert h5ad file to Seurat object")
+            cat("Both CSV and h5ad methods failed. Final error:", conditionMessage(e2), "\n")
+            stop("Unable to load input data for NicheNet analysis")
         })
     })
     
     # Import LIANA results
     cat("Reading LIANA results...\\n")
-    liana_results <- read.csv("${liana_results}")
+    #liana_results <- read.csv("${liana_results}")
+    liana_results <- read.csv("liana_ranked_interactions.csv")
+    cat("Loaded", nrow(liana_results), "ligand-receptor interactions from LIANA\n")
+    
+    # Extract all unique ligands and receptors
+    ligands_from_liana <- unique(liana_results$ligand)
+    receptors_from_liana <- unique(liana_results$receptor)
+    
+    cat("Using", length(ligands_from_liana), "unique ligands and", 
+    length(receptors_from_liana), "unique receptors from LIANA\n")
     top_lr_pairs <- read.csv("top_lr_pairs_for_nichenet.csv")
     
     cat("Summary of LIANA results:\\n")
