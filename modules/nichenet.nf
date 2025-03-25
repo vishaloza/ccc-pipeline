@@ -153,8 +153,8 @@ process NICHENET_ANALYSIS {
     
     # Filter ligands and receptors based on LIANA results
     cat("Filtering ligands and receptors...\\n")
-    prioritized_ligands <- unique(top_lr_pairs\$ligand)
-    prioritized_receptors <- unique(top_lr_pairs\$receptor)
+    prioritized_ligands <- ligands_from_liana
+    prioritized_receptors <- receptors_from_liana
     
     cat("Prioritized ligands:", paste(head(prioritized_ligands), collapse=", "), "...\\n")
     cat("Prioritized receptors:", paste(head(prioritized_receptors), collapse=", "), "...\\n")
