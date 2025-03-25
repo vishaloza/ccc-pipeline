@@ -108,7 +108,7 @@ process NICHENET_ANALYSIS {
     # Import LIANA results
     cat("Reading LIANA results...\\n")
     #liana_results <- read.csv("${liana_results}")
-    liana_results <- read.csv("liana_ranked_interactions.csv")
+    liana_results <- read.csv("liana_ranked_interactions.csv", header=TRUE)
     cat("Loaded", nrow(liana_results), "ligand-receptor interactions from LIANA\n")
     
     # Extract all unique ligands and receptors
