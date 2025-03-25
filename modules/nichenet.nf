@@ -52,9 +52,7 @@ process NICHENET_ANALYSIS {
         
         # Check if files exist
         raw_expression_file <- "raw_expression_matrix.csv"
-        normalized_expression_file <- "normalized_expression_matrix.csv"
         cell_metadata_file <- "cell_metadata.csv"
-        gene_metadata_file <- "gene_metadata.csv"
         
         files_exist <- file.exists(raw_expression_file) && file.exists(cell_metadata_file)
         
@@ -70,23 +68,10 @@ process NICHENET_ANALYSIS {
         cat("Reading cell metadata...\n")  
         cell_metadata <- read.csv(cell_metadata_file, row.names=1, check.names=FALSE)
         
-        # Check if normalized data exists and read it
-        if (file.exists(normalized_expression_file)) {
-            cat("Reading normalized expression matrix...\n")
-            norm_expr <- read.csv(normalized_expression_file, row.names=1, check.names=FALSE)
-        } else {
-            norm_expr <- NULL
-        }
-        
         # Create Seurat object with raw counts
         cat("Creating Seurat object...\n")
         seurat_obj <- CreateSeuratObject(counts = t(raw_expr), meta.data = cell_metadata)
         
-        # If normalized data exists, add it as the scaled data
-        if (!is.null(norm_expr)) {
-            cat("Adding normalized data to Seurat object...\n")
-            seurat_obj[["RNA"]]@data <- as.matrix(t(norm_expr))
-        }
         
         cat("Seurat object created with dimensions:", dim(seurat_obj), "\n")
         cat("Cell types detected:", paste(unique(seurat_obj@meta.data[[cell_type_column]]), collapse=", "), "\n")
@@ -104,7 +89,7 @@ process NICHENET_ANALYSIS {
             stop("Unable to load input data for NicheNet analysis")
         })
     })
-    
+        
     # Import LIANA results
     cat("Reading LIANA results...\\n")
     #liana_results <- read.csv("${liana_results}")
