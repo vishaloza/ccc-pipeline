@@ -112,8 +112,8 @@ process NICHENET_ANALYSIS {
     cat("Loaded", nrow(liana_results), "ligand-receptor interactions from LIANA\n")
     
     # Extract all unique ligands and receptors
-    ligands_from_liana <- unique(liana_results$ligand_complex)  
-    receptors_from_liana <- unique(liana_results$receptor_complex) 
+    ligands_from_liana <- unique(liana_results[["ligand_complex"]])  
+    receptors_from_liana <- unique(liana_results[["receptor_complex"]]) 
     
     cat("Using", length(ligands_from_liana), "unique ligands and", 
     length(receptors_from_liana), "unique receptors from LIANA\n")
