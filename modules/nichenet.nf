@@ -62,6 +62,7 @@ process NICHENET_ANALYSIS {
         }
         
         # Read raw expression matrix
+        raw_expr <- read.csv(raw_expression_file, row.names=1, check.names=FALSE)
         raw_expr_sparse <- as(as.matrix(raw_expr), "dgCMatrix")
         # Transpose efficiently
         raw_expr_sparse_t <- t(raw_expr_sparse)
