@@ -76,7 +76,18 @@ process NICHENET_ANALYSIS {
         # Create Seurat object with raw counts
         cat("Creating Seurat object...\n")
         seurat_obj <- CreateSeuratObject(counts = raw_expr_sparse_t, meta.data = cell_metadata)
-        
+
+        # Define cell_type_column
+        cell_type_column <- "${params.celltype_column}"  # Use the Nextflow parameter
+
+        cat("Seurat object created with dimensions:", dim(seurat_obj), "\n")
+
+        # Check if cell type column exists before trying to access it
+        if(cell_type_column %in% colnames(seurat_obj@meta.data)) {
+            cat("Cell types detected:", paste(unique(seurat_obj@meta.data[[cell_type_column]]), collapse=", "), "\n")
+        } else {
+            cat("WARNING: Cell type column", cell_type_column, "not found. Available columns:", paste(colnames(seurat_obj@meta.data), collapse=", "), "\n")
+        }
         
         cat("Seurat object created with dimensions:", dim(seurat_obj), "\n")
         cat("Cell types detected:", paste(unique(seurat_obj@meta.data[[cell_type_column]]), collapse=", "), "\n")
