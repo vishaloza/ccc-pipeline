@@ -35,7 +35,8 @@ process NICHENET_ANALYSIS {
         library(Seurat)
         library(nichenetr)
         library(tidyverse)
-        library(reticulate)       
+        library(reticulate)   
+        library(Matrix)
         cat("Libraries loaded successfully\\n")
     }, error = function(e) {
         cat("Error loading libraries:", conditionMessage(e), "\\n")
@@ -61,8 +62,11 @@ process NICHENET_ANALYSIS {
         }
         
         # Read raw expression matrix
-        cat("Reading raw expression matrix...\n")
-        raw_expr <- read.csv(raw_expression_file, row.names=1, check.names=FALSE)
+        raw_expr_sparse <- as(as.matrix(raw_expr), "dgCMatrix")
+        # Transpose efficiently
+        raw_expr_sparse_t <- t(raw_expr_sparse)
+        cat("Transposed raw expr matrix...\n")
+
         
         # Read cell metadata
         cat("Reading cell metadata...\n")  
@@ -70,7 +74,7 @@ process NICHENET_ANALYSIS {
         
         # Create Seurat object with raw counts
         cat("Creating Seurat object...\n")
-        seurat_obj <- CreateSeuratObject(counts = t(raw_expr), meta.data = cell_metadata)
+        seurat_obj <- CreateSeuratObject(counts = raw_expr_sparse_t, meta.data = cell_metadata)
         
         
         cat("Seurat object created with dimensions:", dim(seurat_obj), "\n")
