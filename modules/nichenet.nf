@@ -154,7 +154,7 @@ expressed_genes_list <- nichenetr::get_expressed_genes(
 
 # Convert to the format expected by other NicheNet functions
 cat("Converting to expected format...\n")
-expressed_genes_sender <- data.frame(gene = expressed_genes_list)
+expressed_genes_sender <- data.frame(gene_column = expressed_genes_list)
 expressed_genes_receiver <- expressed_genes_sender  # Same for receiver
 cat("Got all expressed genes...\n")
 
@@ -187,8 +187,8 @@ tryCatch({
 })
 
 cat("Finding expressed ligands and receptors...\n")
-expressed_ligands <- expressed_genes_sender$gene[expressed_genes_sender$gene %in% ligands]
-expressed_receptors <- expressed_genes_receiver$gene[expressed_genes_receiver$gene %in% receptors]
+expressed_ligands <- expressed_genes_sender$gene[expressed_genes_sender$gene_column %in% ligands]
+expressed_receptors <- expressed_genes_receiver$gene[expressed_genes_receiver$gene_column %in% receptors]
 
 selected_ligands <- intersect(expressed_ligands, prioritized_ligands)
 selected_receptors <- intersect(expressed_receptors, prioritized_receptors)
@@ -197,13 +197,13 @@ cat("Using", length(selected_ligands), "ligands and", length(selected_receptors)
 
 if(length(selected_ligands) == 0) {
     cat("WARNING: No matching ligands found between LIANA results and NicheNet database\n")
-    cat("Will use all expressed ligands (top 50)\n")
-    selected_ligands <- head(prioritized_ligands, 50)
+    cat("Will use all expressed ligands (top 100)\n")
+    selected_ligands <- head(prioritized_ligands, 100)
 }
 if(length(selected_receptors) == 0) {
     cat("WARNING: No matching receptors found between LIANA results and NicheNet database\n")
-    cat("Will use all expressed receptors (top 50)\n")
-    selected_receptors <- head(prioritized_receptors, 50)
+    cat("Will use all expressed receptors (top 100)\n")
+    selected_receptors <- head(prioritized_receptors, 100)
 }
 
 # Define background expressed genes (for enrichment calculations)
@@ -211,7 +211,7 @@ background_genes_list <- nichenetr::get_expressed_genes(
     celltype_oi = unique_cell_types,
     seurat_obj = seurat_obj
 )
-background_expressed_genes <- data.frame(gene = background_genes_list)
+background_expressed_genes <- data.frame(gene_column = background_genes_list)
 
 # Get Idents from cell type column for consistency
 Idents(seurat_obj) <- cell_type_column
