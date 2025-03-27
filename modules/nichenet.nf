@@ -187,8 +187,8 @@ tryCatch({
 })
 
 cat("Finding expressed ligands and receptors...\n")
-expressed_ligands <- expressed_genes_sender$gene[expressed_genes_sender$gene_column %in% ligands]
-expressed_receptors <- expressed_genes_receiver$gene[expressed_genes_receiver$gene_column %in% receptors]
+expressed_ligands <- expressed_genes_sender$gene_column[expressed_genes_sender$gene_column %in% ligands]
+expressed_receptors <- expressed_genes_receiver$gene_column[expressed_genes_receiver$gene_column %in% receptors]
 
 selected_ligands <- intersect(expressed_ligands, prioritized_ligands)
 selected_receptors <- intersect(expressed_receptors, prioritized_receptors)
@@ -229,8 +229,8 @@ tryCatch({
         receiver_cells = receiver_cell_indices,  # Use cell indices based on cell types
         ligands = selected_ligands,
         receptors = selected_receptors,
-        expressed_genes_receiver = expressed_genes_receiver$gene,
-        background_expressed_genes = background_expressed_genes$gene
+        expressed_genes_receiver = expressed_genes_receiver$gene_column,
+        background_expressed_genes = background_expressed_genes$gene_column
     )
     
     saveRDS(nichenet_output, "nichenet_results_from_liana.rds")
