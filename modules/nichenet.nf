@@ -118,7 +118,7 @@ process NICHENET_ANALYSIS {
     
     cat("Using", length(ligands_from_liana), "unique ligands and", 
     length(receptors_from_liana), "unique receptors from LIANA\n")
-    top_lr_pairs <- read.csv("top_lr_pairs_for_nichenet.csv")
+    #top_lr_pairs <- read.csv("top_lr_pairs_for_nichenet.csv")
     
     cat("Summary of LIANA results:\\n")
     print(head(liana_results))
