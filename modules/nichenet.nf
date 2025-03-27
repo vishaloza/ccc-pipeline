@@ -140,84 +140,96 @@ process NICHENET_ANALYSIS {
         }
     }
     
-    # Instead of filtering for specific sender and receiver cell types,
-    # use all cells as both sender and receiver.
-    all_cells <- colnames(seurat_obj)
-    sender_cells <- all_cells
-    receiver_cells <- all_cells
-    cat("Using all", length(all_cells), "cells as both sender and receiver.\\n")
+    # Get the list of unique cell types
+unique_cell_types <- unique(seurat_obj@meta.data[[cell_type_column]])
+cat("Using cell types for analysis:", paste(head(unique_cell_types), collapse=", "), "...\n")
+
+# Get expressed genes using the cell types, not the barcodes
+cat("Getting expressed genes by cell type...\n")
+expressed_genes_sender <- nichenetr::get_expressed_genes(
+    celltype_oi = unique_cell_types,  # Pass cell types, not barcodes
+    seurat_obj = seurat_obj,          # The Seurat object
+    pct = 0.1                         # The percentage threshold
+)
+expressed_genes_receiver <- expressed_genes_sender  # Same for receiver
+cat("Got all expressed genes...\n")
+
+# Filter ligands and receptors based on LIANA results
+cat("Filtering ligands and receptors...\n")
+prioritized_ligands <- ligands_from_liana
+prioritized_receptors <- receptors_from_liana
+
+cat("Prioritized ligands:", paste(head(prioritized_ligands), collapse=", "), "...\n")
+cat("Prioritized receptors:", paste(head(prioritized_receptors), collapse=", "), "...\n")
+
+# Load NicheNet database objects
+tryCatch({
+    cat("Checking NicheNet database...\n")
+    data("ligands", package = "nichenetr", envir = environment())
+    data("receptors", package = "nichenetr", envir = environment())
     
-    # Get expressed genes
-    cat("Getting expressed genes...\\n")
-    expressed_genes_sender <- nichenetr::get_expressed_genes(seurat_obj, sender_cells)
-    expressed_genes_receiver <- nichenetr::get_expressed_genes(seurat_obj, receiver_cells)
-    
-    # Filter ligands and receptors based on LIANA results
-    cat("Filtering ligands and receptors...\\n")
-    prioritized_ligands <- ligands_from_liana
-    prioritized_receptors <- receptors_from_liana
-    
-    cat("Prioritized ligands:", paste(head(prioritized_ligands), collapse=", "), "...\\n")
-    cat("Prioritized receptors:", paste(head(prioritized_receptors), collapse=", "), "...\\n")
-    
-    # Load NicheNet database objects
-    tryCatch({
-        cat("Checking NicheNet database...\\n")
-        data("ligands", package = "nichenetr", envir = environment())
-        data("receptors", package = "nichenetr", envir = environment())
-        
-        if(!exists("ligands") || !exists("receptors")) {
-            cat("WARNING: NicheNet database not loaded correctly. Attempting to load manually...\\n")
-            nichenetr_path <- system.file(package = "nichenetr")
-            ligands <- readRDS(file.path(nichenetr_path, "data", "ligands.rds"))
-            receptors <- readRDS(file.path(nichenetr_path, "data", "receptors.rds"))
-        }
-        
-        cat("NicheNet database loaded with", length(ligands), "ligands and", length(receptors), "receptors\\n")
-    }, error = function(e) {
-        cat("Error loading NicheNet database:", conditionMessage(e), "\\n")
-        ligands <- c()
-        receptors <- c()
-    })
-    
-    cat("Finding expressed ligands and receptors...\\n")
-    expressed_ligands <- expressed_genes_sender\$gene[expressed_genes_sender\$gene %in% ligands]
-    expressed_receptors <- expressed_genes_receiver\$gene[expressed_genes_receiver\$gene %in% receptors]
-    
-    selected_ligands <- intersect(expressed_ligands, prioritized_ligands)
-    selected_receptors <- intersect(expressed_receptors, prioritized_receptors)
-    
-    cat("Using", length(selected_ligands), "ligands and", length(selected_receptors), "receptors from LIANA analysis\\n")
-    
-    if(length(selected_ligands) == 0) {
-        cat("WARNING: No matching ligands found between LIANA results and NicheNet database\\n")
-        cat("Will use all expressed ligands (top 50)\\n")
-        selected_ligands <- head(prioritized_ligands, 50)
-    }
-    if(length(selected_receptors) == 0) {
-        cat("WARNING: No matching receptors found between LIANA results and NicheNet database\\n")
-        cat("Will use all expressed receptors (top 50)\\n")
-        selected_receptors <- head(prioritized_receptors, 50)
+    if(!exists("ligands") || !exists("receptors")) {
+        cat("WARNING: NicheNet database not loaded correctly. Attempting to load manually...\n")
+        nichenetr_path <- system.file(package = "nichenetr")
+        ligands <- readRDS(file.path(nichenetr_path, "data", "ligands.rds"))
+        receptors <- readRDS(file.path(nichenetr_path, "data", "receptors.rds"))
     }
     
-    # Define background expressed genes (for enrichment calculations)
-    background_expressed_genes <- nichenetr::get_expressed_genes(seurat_obj)
+    cat("NicheNet database loaded with", length(ligands), "ligands and", length(receptors), "receptors\n")
+}, error = function(e) {
+    cat("Error loading NicheNet database:", conditionMessage(e), "\n")
+    ligands <- c()
+    receptors <- c()
+})
+
+cat("Finding expressed ligands and receptors...\n")
+expressed_ligands <- expressed_genes_sender$gene[expressed_genes_sender$gene %in% ligands]
+expressed_receptors <- expressed_genes_receiver$gene[expressed_genes_receiver$gene %in% receptors]
+
+selected_ligands <- intersect(expressed_ligands, prioritized_ligands)
+selected_receptors <- intersect(expressed_receptors, prioritized_receptors)
+
+cat("Using", length(selected_ligands), "ligands and", length(selected_receptors), "receptors from LIANA analysis\n")
+
+if(length(selected_ligands) == 0) {
+    cat("WARNING: No matching ligands found between LIANA results and NicheNet database\n")
+    cat("Will use all expressed ligands (top 50)\n")
+    selected_ligands <- head(prioritized_ligands, 50)
+}
+if(length(selected_receptors) == 0) {
+    cat("WARNING: No matching receptors found between LIANA results and NicheNet database\n")
+    cat("Will use all expressed receptors (top 50)\n")
+    selected_receptors <- head(prioritized_receptors, 50)
+}
+
+# Define background expressed genes (for enrichment calculations) - CORRECTED
+background_expressed_genes <- nichenetr::get_expressed_genes(
+    celltype_oi = unique_cell_types,
+    seurat_obj = seurat_obj
+)
+
+# Get Idents from cell type column for consistency
+Idents(seurat_obj) <- cell_type_column
+
+# Get sender and receiver cells based on cell types
+cat("Getting sender and receiver cell indices...\n")
+sender_cell_indices <- WhichCells(seurat_obj, idents = unique_cell_types)
+receiver_cell_indices <- sender_cell_indices  # Use same cells for both
+
+cat("Running NicheNet analysis...\n")
+tryCatch({
+    nichenet_output <- nichenetr::nichenet_analysis(
+        seurat_obj = seurat_obj,
+        sender_cells = sender_cell_indices,  # Use cell indices based on cell types
+        receiver_cells = receiver_cell_indices,  # Use cell indices based on cell types
+        ligands = selected_ligands,
+        receptors = selected_receptors,
+        expressed_genes_receiver = expressed_genes_receiver$gene,
+        background_expressed_genes = background_expressed_genes$gene
+    )
     
-    cat("Running NicheNet analysis...\\n")
-    tryCatch({
-        nichenet_output <- nichenetr::nichenet_analysis(
-            seurat_obj = seurat_obj,
-            sender_cells = sender_cells,
-            receiver_cells = receiver_cells,
-            ligands = selected_ligands,
-            receptors = selected_receptors,
-            expressed_genes_receiver = expressed_genes_receiver\$gene,
-            background_expressed_genes = background_expressed_genes\$gene
-        )
-        
-        saveRDS(nichenet_output, "nichenet_results_from_liana.rds")
-        cat("Saved NicheNet results to 'nichenet_results_from_liana.rds'\\n")
-        
+    saveRDS(nichenet_output, "nichenet_results_from_liana.rds")
+    cat("Saved NicheNet results to 'nichenet_results_from_liana.rds'\n")
         cat("Creating visualizations...\\n")
         
         # 1. Ligand activity heatmap
