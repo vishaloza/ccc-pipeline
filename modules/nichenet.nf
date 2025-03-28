@@ -139,10 +139,14 @@ process NICHENET_ANALYSIS {
             }
         }
     }
-    
+
+# Get Idents from cell type column for consistency
+Idents(seurat_obj) <- seurat_obj@meta.data[[cell_type_column]]
+cat("Available Idents in Seurat object:", paste(levels(Idents(seurat_obj)), collapse=", "), "\n")
+
 # Get the list of unique cell types
-unique_cell_types <- unique(seurat_obj@meta.data[[cell_type_column]])
-cat("Using cell types for analysis:", paste(head(unique_cell_types), collapse=", "), "...\n")
+unique_cell_types <- levels(Idents(seurat_obj))
+cat("Using these cell types instead:", paste(unique_cell_types, collapse=", "), "\n")
 
 # Get expressed genes using the cell types, not the barcodes
 cat("Getting expressed genes by cell type...\n")
@@ -213,8 +217,6 @@ background_genes_list <- nichenetr::get_expressed_genes(
 )
 background_expressed_genes <- data.frame("gene" = background_genes_list)
 
-# Get Idents from cell type column for consistency
-Idents(seurat_obj) <- seurat_obj@meta.data[[cell_type_column]]
 
 # Get sender and receiver cells based on cell types
 cat("Getting sender and receiver cell indices...\n")
