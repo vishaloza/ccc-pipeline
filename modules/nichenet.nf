@@ -88,7 +88,7 @@ process NICHENET_ANALYSIS {
         } else {
             cat("WARNING: Cell type column", cell_type_column, "not found. Available columns:", paste(colnames(seurat_obj@meta.data), collapse=", "), "\n")
         }
-        
+
         cat("Seurat object created with dimensions:", dim(seurat_obj), "\n")
         cat("Cell types detected:", paste(unique(seurat_obj@meta.data[[cell_type_column]]), collapse=", "), "\n")
     }, error = function(e) {
@@ -147,8 +147,8 @@ cat("Using cell types for analysis:", paste(head(unique_cell_types), collapse=",
 # Get expressed genes using the cell types, not the barcodes
 cat("Getting expressed genes by cell type...\n")
 expressed_genes_list <- nichenetr::get_expressed_genes(
-    celltype_oi = unique_cell_types,  # Pass cell types, not barcodes
-    seurat_obj = seurat_obj,          # The Seurat object
+    unique_cell_types,  # Pass cell types, not barcodes
+    seurat_obj,          # The Seurat object
     pct = 0.1                         # The percentage threshold
 )
 
@@ -208,13 +208,13 @@ if(length(selected_receptors) == 0) {
 
 # Define background expressed genes (for enrichment calculations)
 background_genes_list <- nichenetr::get_expressed_genes(
-    celltype_oi = unique_cell_types,
-    seurat_obj = seurat_obj
+    unique_cell_types,
+    seurat_obj
 )
 background_expressed_genes <- data.frame("gene" = background_genes_list)
 
 # Get Idents from cell type column for consistency
-Idents(seurat_obj) <- cell_type_column
+Idents(seurat_obj) <- seurat_obj@meta.data[[cell_type_column]]
 
 # Get sender and receiver cells based on cell types
 cat("Getting sender and receiver cell indices...\n")
