@@ -173,23 +173,40 @@ cat("Prioritized receptors:", paste(head(prioritized_receptors), collapse=", "),
 # Load NicheNet database objects
 tryCatch({
     cat("Checking NicheNet database...\n")
+    
+    # Try to load from package first
     data("ligands", package = "nichenetr", envir = environment())
     data("receptors", package = "nichenetr", envir = environment())
     
+    # If not found, download directly from Zenodo
     if(!exists("ligands") || !exists("receptors")) {
-        cat("WARNING: NicheNet database not loaded correctly. Attempting to load manually...\n")
-        nichenetr_path <- system.file(package = "nichenetr")
-        ligands <- readRDS(file.path(nichenetr_path, "data", "ligands.rds"))
-        receptors <- readRDS(file.path(nichenetr_path, "data", "receptors.rds"))
+        cat("WARNING: NicheNet database not found in package. Downloading from Zenodo...\n")
+        
+        # Create a temporary file for downloading
+        temp_ligands <- tempfile(fileext = ".rds")
+        temp_receptors <- tempfile(fileext = ".rds")
+        
+        # Download files
+        download.file("https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final_mouse.rds", temp_ligands, mode = "wb")
+        download.file("https://zenodo.org/record/7074291/files/weighted_networks_nsga2r_final_mouse.rds", temp_receptors, mode = "wb")
+        
+        # Load the downloaded files
+        ligands <- readRDS(temp_ligands)
+        receptors <- readRDS(temp_receptors)
+        
+        # Clean up temp files
+        unlink(temp_ligands)
+        unlink(temp_receptors)
     }
     
     cat("NicheNet database loaded with", length(ligands), "ligands and", length(receptors), "receptors\n")
 }, error = function(e) {
     cat("Error loading NicheNet database:", conditionMessage(e), "\n")
-    ligands <- c()
-    receptors <- c()
+    
+    # Create empty vectors if download fails
+    if(!exists("ligands")) ligands <- c()
+    if(!exists("receptors")) receptors <- c()
 })
-
 cat("Finding expressed ligands and receptors...\n")
 expressed_ligands <- expressed_genes_sender[["gene"]][expressed_genes_sender[["gene"]] %in% ligands]
 expressed_receptors <- expressed_genes_receiver[["gene"]][expressed_genes_receiver[["gene"]] %in% receptors]
