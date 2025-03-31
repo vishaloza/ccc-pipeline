@@ -240,94 +240,179 @@ cat("Getting sender and receiver cell indices...\n")
 sender_cell_indices <- WhichCells(seurat_obj, idents = unique_cell_types)
 receiver_cell_indices <- sender_cell_indices  # Use same cells for both
 
+# Load NicheNet resources
+tryCatch({
+    cat("Downloading NicheNet resources from Zenodo...\n")
+    ligand_target_matrix <- readRDS(url("https://zenodo.org/record/7074291/files/ligand_target_matrix_nsga2r_final_mouse.rds"))
+    weighted_networks <- readRDS(url("https://zenodo.org/record/7074291/files/weighted_networks_nsga2r_final_mouse.rds"))
+    
+    cat("Successfully loaded ligand_target_matrix with dimensions:", dim(ligand_target_matrix)[1], "x", dim(ligand_target_matrix)[2], "\n")
+    cat("Successfully loaded weighted_networks\n")
+}, error = function(e) {
+    cat("ERROR loading NicheNet resources:", conditionMessage(e), "\n")
+    stop("Failed to load required NicheNet resources. Cannot continue analysis.")
+})
+
 cat("Running NicheNet analysis...\n")
 tryCatch({
-    nichenet_output <- nichenetr::nichenet_analysis(
-        seurat_obj = seurat_obj,
-        sender_cells = sender_cell_indices,  # Use cell indices based on cell types
-        receiver_cells = receiver_cell_indices,  # Use cell indices based on cell types
-        ligands = selected_ligands,
-        receptors = selected_receptors,
-        expressed_genes_receiver = expressed_genes_receiver[["gene"]],
-        background_expressed_genes = background_expressed_genes[["gene"]]
+    nichenet_output <- nichenetr::nichenet_seuratobj_aggregate(
+    seurat_obj = seurat_obj,
+    receiver = cell_type_column,  # The cell type column name
+    sender = unique_cell_types,   # All cell types as senders
+    condition_colname = NULL,     # No condition comparison (NULL if not doing DE analysis)
+    lr_network = data.frame(from = ligands_from_liana, to = receptors_from_liana) %>% 
+        distinct(from, to),
+    ligand_target_matrix = ligand_target_matrix,  # You'll need to load this
+    weighted_networks = weighted_networks
     )
     
     saveRDS(nichenet_output, "nichenet_results_from_liana.rds")
     cat("Saved NicheNet results to 'nichenet_results_from_liana.rds'\n")
-        cat("Creating visualizations...\\n")
-        
-        # 1. Ligand activity heatmap
-        tryCatch({
+}, error = function(e) {
+    cat("ERROR in NicheNet analysis:", conditionMessage(e), "\n")
+
+    # Create minimal output so pipeline can continue
+    nichenet_output <- list(
+        error = conditionMessage(e),
+        ligand_activities = data.frame(test_ligand = head(ligands_from_liana, 10), 
+                                      auroc = NA, aupr = NA, 
+                                      aupr_corrected = NA, pearson = NA, 
+                                      rank = 1:10)
+    )
+    saveRDS(nichenet_output, "nichenet_results_from_liana.rds")
+})
+
+    
+
+# Create visualizations
+cat("Creating visualizations...\n")
+
+# Check nichenet_output structure for debugging
+tryCatch({
+    cat("NicheNet output contains the following elements:", paste(names(nichenet_output), collapse=", "), "\n")
+    
+    if("ligand_activities" %in% names(nichenet_output)) {
+        cat("Found ligand_activities with", nrow(nichenet_output$ligand_activities), "rows\n")
+    }
+    
+    # 1. Ligand activity heatmap
+    tryCatch({
+        # Check if we need to use the new visualization function structure
+        if("ligand_activities" %in% names(nichenet_output)) {
+            # For newer nichenet_seuratobj_aggregate output
             ligand_activity_plot <- nichenetr::nichenet_ligand_activity_plot(
-                nichenet_output, 
-                top_n_ligands = min(20, length(selected_ligands)),
+                nichenet_output = nichenet_output, 
+                top_n_ligands = min(20, nrow(nichenet_output$ligand_activities)),
                 color_scheme = "viridis"
             )
-            ggsave("ligand_activity_heatmap.pdf", ligand_activity_plot, width = 10, height = 8)
-            cat("Created ligand activity heatmap\\n")
-        }, error = function(e) {
-            cat("Error creating ligand activity heatmap:", conditionMessage(e), "\\n")
-            pdf("ligand_activity_heatmap.pdf", width = 10, height = 8)
-            plot(1, type="n", xlab="", ylab="", main="Error creating ligand activity heatmap")
-            text(1, 1, conditionMessage(e), cex=0.8)
-            dev.off()
-        })
-        
-        # 2. Ligand-target heatmap
-        tryCatch({
-            target_heatmap <- nichenetr::nichenet_ligand_target_heatmap(
-                nichenet_output, 
-                top_n_ligands = min(10, length(selected_ligands)),
-                top_n_targets = 50
+        } else {
+            # Fallback for direct ligand activity matrix
+            ligand_activity_plot <- nichenetr::ligand_activity_plot(
+                ligand_activities = nichenet_output, 
+                top_n_ligands = min(20, nrow(nichenet_output)),
+                color_scheme = "viridis"
             )
-            ggsave("ligand_target_heatmap.pdf", target_heatmap, width = 12, height = 10)
-            cat("Created ligand-target heatmap\\n")
-        }, error = function(e) {
-            cat("Error creating ligand-target heatmap:", conditionMessage(e), "\\n")
-            pdf("ligand_target_heatmap.pdf", width = 12, height = 10)
-            plot(1, type="n", xlab="", ylab="", main="Error creating ligand-target heatmap")
-            text(1, 1, conditionMessage(e), cex=0.8)
-            dev.off()
-        })
+        }
         
-        # 3. Ligand-receptor network
-        tryCatch({
-            lr_network <- nichenetr::nichenet_ligand_receptor_network(
-                nichenet_output,
-                ligands = selected_ligands,
-                receptors = selected_receptors
-            )
-            ggsave("ligand_receptor_network.pdf", lr_network, width = 10, height = 8)
-            cat("Created ligand-receptor network\\n")
-        }, error = function(e) {
-            cat("Error creating ligand-receptor network:", conditionMessage(e), "\\n")
-            pdf("ligand_receptor_network.pdf", width = 10, height = 8)
-            plot(1, type="n", xlab="", ylab="", main="Error creating ligand-receptor network")
-            text(1, 1, conditionMessage(e), cex=0.8)
-            dev.off()
-        })
-        
+        ggsave("ligand_activity_heatmap.pdf", ligand_activity_plot, width = 10, height = 8)
+        cat("Created ligand activity heatmap\n")
     }, error = function(e) {
-        cat("Error in NicheNet analysis:", conditionMessage(e), "\\n")
-        nichenet_output <- list(error = conditionMessage(e))
-        saveRDS(nichenet_output, "nichenet_results_from_liana.rds")
-        
+        cat("Error creating ligand activity heatmap:", conditionMessage(e), "\n")
         pdf("ligand_activity_heatmap.pdf", width = 10, height = 8)
-        plot(1, type="n", xlab="", ylab="", main="NicheNet Analysis Failed")
-        text(1, 1, conditionMessage(e), cex=0.8)
-        dev.off()
-        
-        pdf("ligand_target_heatmap.pdf", width = 12, height = 10)
-        plot(1, type="n", xlab="", ylab="", main="NicheNet Analysis Failed")
-        text(1, 1, conditionMessage(e), cex=0.8)
-        dev.off()
-        
-        pdf("ligand_receptor_network.pdf", width = 10, height = 8)
-        plot(1, type="n", xlab="", ylab="", main="NicheNet Analysis Failed")
+        plot(1, type="n", xlab="", ylab="", main="Error creating ligand activity heatmap")
         text(1, 1, conditionMessage(e), cex=0.8)
         dev.off()
     })
     
-    cat("NicheNet analysis complete!\\n")
-    """
+    # 2. Ligand-target heatmap
+    tryCatch({
+        # Get top ligands based on output structure
+        if("ligand_activities" %in% names(nichenet_output)) {
+            top_ligands <- nichenet_output$ligand_activities %>%
+                dplyr::arrange(-aupr_corrected) %>%
+                dplyr::pull(test_ligand) %>%
+                head(min(10, nrow(nichenet_output$ligand_activities)))
+                
+            target_heatmap <- nichenetr::nichenet_ligand_target_heatmap(
+                nichenet_output = nichenet_output, 
+                top_n_ligands = min(10, length(top_ligands)),
+                top_n_targets = 50
+            )
+        } else {
+            # Fallback for other output structures
+            target_heatmap <- nichenetr::nichenet_ligand_target_heatmap(
+                nichenet_output = nichenet_output, 
+                top_n_ligands = min(10, length(selected_ligands)),
+                top_n_targets = 50
+            )
+        }
+        
+        ggsave("ligand_target_heatmap.pdf", target_heatmap, width = 12, height = 10)
+        cat("Created ligand-target heatmap\n")
+    }, error = function(e) {
+        cat("Error creating ligand-target heatmap:", conditionMessage(e), "\n")
+        cat("Error details:", e$message, "\n")
+        cat("Error call:", deparse(e$call), "\n")
+        
+        pdf("ligand_target_heatmap.pdf", width = 12, height = 10)
+        plot(1, type="n", xlab="", ylab="", main="Error creating ligand-target heatmap")
+        text(1, 1, conditionMessage(e), cex=0.8)
+        dev.off()
+    })
+    
+    # 3. Ligand-receptor network
+    tryCatch({
+        # Adjust for different output structures
+        if("ligand_activities" %in% names(nichenet_output) && 
+           "expressed_receptors" %in% names(nichenet_output)) {
+            
+            top_ligands <- nichenet_output$ligand_activities %>%
+                dplyr::arrange(-aupr_corrected) %>%
+                dplyr::pull(test_ligand) %>%
+                head(min(10, nrow(nichenet_output$ligand_activities)))
+                
+            lr_network <- nichenetr::nichenet_ligand_receptor_network(
+                nichenet_output = nichenet_output,
+                ligands = top_ligands,
+                receptors = nichenet_output$expressed_receptors
+            )
+        } else {
+            lr_network <- nichenetr::nichenet_ligand_receptor_network(
+                nichenet_output = nichenet_output,
+                ligands = selected_ligands,
+                receptors = selected_receptors
+            )
+        }
+        
+        ggsave("ligand_receptor_network.pdf", lr_network, width = 10, height = 8)
+        cat("Created ligand-receptor network\n")
+    }, error = function(e) {
+        cat("Error creating ligand-receptor network:", conditionMessage(e), "\n")
+        pdf("ligand_receptor_network.pdf", width = 10, height = 8)
+        plot(1, type="n", xlab="", ylab="", main="Error creating ligand-receptor network")
+        text(1, 1, conditionMessage(e), cex=0.8)
+        dev.off()
+    })
+}, error = function(e) {
+    cat("Error in visualization process:", conditionMessage(e), "\n")
+    
+    # Create fallback error plots
+    pdf("ligand_activity_heatmap.pdf", width = 10, height = 8)
+    plot(1, type="n", xlab="", ylab="", main="NicheNet Analysis Failed")
+    text(1, 1, conditionMessage(e), cex=0.8)
+    dev.off()
+    
+    pdf("ligand_target_heatmap.pdf", width = 12, height = 10)
+    plot(1, type="n", xlab="", ylab="", main="NicheNet Analysis Failed")
+    text(1, 1, conditionMessage(e), cex=0.8)
+    dev.off()
+    
+    pdf("ligand_receptor_network.pdf", width = 10, height = 8)
+    plot(1, type="n", xlab="", ylab="", main="NicheNet Analysis Failed")
+    text(1, 1, conditionMessage(e), cex=0.8)
+    dev.off()
+})
+
+cat("NicheNet analysis complete!\n")
 }
+"""
