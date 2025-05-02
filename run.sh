@@ -8,6 +8,7 @@ RECEIVER=""
 OUTDIR="results"
 PROFILE="singularity_3_5,slurm"  # Use the Singularity 3.5 compatible profile by default
 CELLTYPE_COLUMN="cell_type"  # Default column name, but can be overridden
+INPUT_TYPE="h5ad"  # Default input type (LIANA-only)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
       CELLTYPE_COLUMN="$2"
       shift 2
       ;;
+    --input_type)
+      INPUT_TYPE="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1"
       exit 1
@@ -44,15 +49,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Check for required arguments
-if [[ -z "$INPUT" || -z "$SENDER" || -z "$RECEIVER" ]]; then
+if [[ -z "$INPUT" ]]; then
   echo "Error: Required arguments missing"
-  echo "Usage: ./run.sh --input <h5ad_file> --sender <sender_celltype> --receiver <receiver_celltype> [--outdir <output_dir>] [--profile <nextflow_profile>] [--celltype_column <column_name>]"
+  echo "Usage: ./run.sh --input <input_file> [--input_type <h5ad|rds|both>] [--sender <sender_celltype>] [--receiver <receiver_celltype>] [--outdir <output_dir>] [--profile <nextflow_profile>] [--celltype_column <column_name>]"
   exit 1
 fi
 
 # Check if file exists
 if [[ ! -f "$INPUT" ]]; then
   echo "Error: Input file not found: $INPUT"
+  exit 1
+fi
+
+# Validate input type
+if [[ "$INPUT_TYPE" != "h5ad" && "$INPUT_TYPE" != "rds" && "$INPUT_TYPE" != "both" ]]; then
+  echo "Error: Invalid input type. Must be 'h5ad', 'rds', or 'both'."
+  exit 1
+fi
+
+# Check if sender and receiver are required
+if [[ "$INPUT_TYPE" == "both" && ( -z "$SENDER" || -z "$RECEIVER" ) ]]; then
+  echo "Error: Sender and receiver cell types are required for integrated analysis"
   exit 1
 fi
 
@@ -82,25 +99,40 @@ chmod 777 $SINGULARITY_CACHEDIR
 echo "Starting LIANA + NicheNet pipeline"
 echo "=================================="
 echo "Input file:    $INPUT"
-echo "Sender:        $SENDER"
-echo "Receiver:      $RECEIVER"
+echo "Input type:    $INPUT_TYPE"
+if [[ -n "$SENDER" ]]; then
+  echo "Sender:        $SENDER"
+fi
+if [[ -n "$RECEIVER" ]]; then
+  echo "Receiver:      $RECEIVER"
+fi
 echo "Cell type col: $CELLTYPE_COLUMN"
 echo "Output dir:    $OUTDIR"
 echo "Profile:       $PROFILE"
 echo "=================================="
 
-# Run the pipeline with verbose logging enabled and explicitly set the celltype_column parameter
-NXF_VER=21.10.6 nextflow run main.nf \
-  --input "$INPUT" \
-  --sender_celltype "$SENDER" \
-  --receiver_celltype "$RECEIVER" \
-  --celltype_column "$CELLTYPE_COLUMN" \
-  --outdir "$OUTDIR" \
-  -profile "$PROFILE" \
+# Build the command
+CMD="NXF_VER=21.10.6 nextflow run main.nf \
+  --input \"$INPUT\" \
+  --input_type \"$INPUT_TYPE\" \
+  --celltype_column \"$CELLTYPE_COLUMN\" \
+  --outdir \"$OUTDIR\" \
+  -profile \"$PROFILE\" \
   -resume \
   -with-trace \
   -with-report \
-  -ansi-log false
+  -ansi-log false"
+
+# Add sender/receiver if specified
+if [[ -n "$SENDER" ]]; then
+  CMD+=" --sender_celltype \"$SENDER\""
+fi
+if [[ -n "$RECEIVER" ]]; then
+  CMD+=" --receiver_celltype \"$RECEIVER\""
+fi
+
+# Execute the command
+eval $CMD
 
 # Check exit status
 if [[ $? -eq 0 ]]; then
