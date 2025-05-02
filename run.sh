@@ -1,144 +1,70 @@
 #!/bin/bash
-# Helper script to run the LIANA + NicheNet pipeline with Singularity 3.5.2
+#SBATCH --job-name=multinichenet_analysis
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=vishoza@uab.edu
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=350G
+#SBATCH --time=24:00:00
+#SBATCH --partition=largemem
+#SBATCH --output=multinichenet_analysis_%A_%a.out
+#SBATCH --error=multinichenet_analysis_%A_%a.err
 
-# Default values
-INPUT=""
-SENDER=""
-RECEIVER=""
-OUTDIR="results"
-PROFILE="singularity_3_5,slurm"  # Use the Singularity 3.5 compatible profile by default
-CELLTYPE_COLUMN="cell_type"  # Default column name, but can be overridden
-INPUT_TYPE="h5ad"  # Default input type (LIANA-only)
+# Load necessary modules
+module load Java/19.0.2
+module load Anaconda3
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --input)
-      INPUT="$2"
-      shift 2
-      ;;
-    --sender)
-      SENDER="$2"
-      shift 2
-      ;;
-    --receiver)
-      RECEIVER="$2"
-      shift 2
-      ;;
-    --outdir)
-      OUTDIR="$2"
-      shift 2
-      ;;
-    --profile)
-      PROFILE="$2"
-      shift 2
-      ;;
-    --celltype_column)
-      CELLTYPE_COLUMN="$2"
-      shift 2
-      ;;
-    --input_type)
-      INPUT_TYPE="$2"
-      shift 2
-      ;;
-    *)
-      echo "Unknown argument: $1"
-      exit 1
-      ;;
-  esac
-done
+# Set JAVA_HOME to the location of the loaded Java
+export JAVA_HOME=$(dirname $(dirname $(which java)))
 
-# Check for required arguments
-if [[ -z "$INPUT" ]]; then
-  echo "Error: Required arguments missing"
-  echo "Usage: ./run.sh --input <input_file> [--input_type <h5ad|rds|both>] [--sender <sender_celltype>] [--receiver <receiver_celltype>] [--outdir <output_dir>] [--profile <nextflow_profile>] [--celltype_column <column_name>]"
-  exit 1
-fi
+# Check JAVA_HOME environment variable
+echo $JAVA_HOME
 
-# Check if file exists
-if [[ ! -f "$INPUT" ]]; then
-  echo "Error: Input file not found: $INPUT"
-  exit 1
-fi
+# Set up Nextflow
+NXF_DIR="/data/user/vishoza/nextflow"
+export PATH=$PATH:$NXF_DIR
+export NXF_HOME=$HOME/.nextflow
 
-# Validate input type
-if [[ "$INPUT_TYPE" != "h5ad" && "$INPUT_TYPE" != "rds" && "$INPUT_TYPE" != "both" ]]; then
-  echo "Error: Invalid input type. Must be 'h5ad', 'rds', or 'both'."
-  exit 1
-fi
+# Set R memory size for larger datasets
+export R_MAX_VSIZE=300000000000 # Set to 300GB
 
-# Check if sender and receiver are required
-if [[ "$INPUT_TYPE" == "both" && ( -z "$SENDER" || -z "$RECEIVER" ) ]]; then
-  echo "Error: Sender and receiver cell types are required for integrated analysis"
-  exit 1
-fi
+# Specify input and output directories
+INPUT_DIR="/data/project/zindl_lab/pragun/garrett"
+OUTPUT_DIR="/data/project/zindl_lab/H2Ab1/data/multinichenet_analysis/"
 
-# Check Singularity version
-SINGULARITY_VERSION=$(singularity --version 2>/dev/null | grep -oP '(?<=version\s)[0-9]+\.[0-9]+(\.[0-9]+)?')
-echo "Detected Singularity version: $SINGULARITY_VERSION"
+# Ensure the output directory exists
+mkdir -p $OUTPUT_DIR
 
-# Set appropriate profile based on Singularity version
-if [[ "$PROFILE" == *"singularity"* && "$SINGULARITY_VERSION" == "3.5"* ]]; then
-  # Replace standard singularity profile with singularity_3_5
-  PROFILE=$(echo "$PROFILE" | sed 's/singularity/singularity_3_5/g')
-  echo "Using compatibility profile for Singularity 3.5.x: $PROFILE"
-fi
+# Create subdirectories for Nextflow work and temporary files within OUTPUT_DIR
+WORK_DIR="${OUTPUT_DIR}/work"
+TMP_DIR="${OUTPUT_DIR}/tmp"
+mkdir -p $OUTPUT_DIR $WORK_DIR $TMP_DIR
 
-# Create the work directory with appropriate permissions
-mkdir -p "$OUTDIR"
-mkdir -p work
-chmod -R 777 work
+# Set environment variables for temporary directories
+export TMPDIR=$TMP_DIR
+export NXF_TEMP=$TMP_DIR
 
-# Export Singularity environment variables
-export SINGULARITY_BINDPATH="$PWD:/data,$PWD:/workdir,$PWD:$PWD"
-export SINGULARITY_CACHEDIR="$PWD/.singularity"
-mkdir -p $SINGULARITY_CACHEDIR
-chmod 777 $SINGULARITY_CACHEDIR
+# Define input parameters
+SEURAT_FILE="${INPUT_DIR}/seurat_object.rds"  # Path to your Seurat RDS file
+CELL_TYPE_COLUMN="cell_type_subsets"  # Column in Seurat metadata containing cell types
 
-# Run the pipeline
-echo "Starting LIANA + NicheNet pipeline"
-echo "=================================="
-echo "Input file:    $INPUT"
-echo "Input type:    $INPUT_TYPE"
-if [[ -n "$SENDER" ]]; then
-  echo "Sender:        $SENDER"
-fi
-if [[ -n "$RECEIVER" ]]; then
-  echo "Receiver:      $RECEIVER"
-fi
-echo "Cell type col: $CELLTYPE_COLUMN"
-echo "Output dir:    $OUTDIR"
-echo "Profile:       $PROFILE"
-echo "=================================="
+# Force pull the latest version of the pipeline
+echo "Pulling latest pipeline version..."
+nextflow pull vishaloza/ccc-pipeline -r main
 
-# Build the command
-CMD="NXF_VER=21.10.6 nextflow run main.nf \
-  --input \"$INPUT\" \
-  --input_type \"$INPUT_TYPE\" \
-  --celltype_column \"$CELLTYPE_COLUMN\" \
-  --outdir \"$OUTDIR\" \
-  -profile \"$PROFILE\" \
+# Run the pipeline with MultiNicheNet
+nextflow run vishaloza/ccc-pipeline \
+  -r main \
+  -latest \
   -resume \
-  -with-trace \
+  -profile conda,slurm \
+  -work-dir $WORK_DIR \
+  --input $SEURAT_FILE \
+  --input_type rds_multi \
+  --celltype_column $CELL_TYPE_COLUMN \
+  --outdir $OUTPUT_DIR \
   -with-report \
-  -ansi-log false"
+  -with-trace \
+  -with-timeline
 
-# Add sender/receiver if specified
-if [[ -n "$SENDER" ]]; then
-  CMD+=" --sender_celltype \"$SENDER\""
-fi
-if [[ -n "$RECEIVER" ]]; then
-  CMD+=" --receiver_celltype \"$RECEIVER\""
-fi
-
-# Execute the command
-eval $CMD
-
-# Check exit status
-if [[ $? -eq 0 ]]; then
-  echo "Pipeline completed successfully!"
-  echo "Results are available in: $OUTDIR"
-else
-  echo "Pipeline failed. Please check the logs for details."
-  exit 1
-fi
+echo "MultiNicheNet analysis complete!"

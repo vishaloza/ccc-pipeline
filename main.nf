@@ -6,9 +6,11 @@ nextflow.enable.dsl = 2
 include { LIANA_ANALYSIS } from './modules/liana'
 include { NICHENET_ANALYSIS } from './modules/nichenet'
 include { NICHENET_ANALYSIS_STANDALONE } from './modules/nichenet_standalone'
+include { MULTINICHENET_ANALYSIS_STANDALONE } from './modules/multinichenet_standalone'
 include { VISUALIZE_RESULTS } from './modules/visualize'
 include { VISUALIZE_LIANA_RESULTS } from './modules/visualize_liana'
 include { VISUALIZE_NICHENET_RESULTS } from './modules/visualize_nichenet'
+include { VISUALIZE_MULTINICHENET_RESULTS } from './modules/visualize_multinichenet'
 
 // Default parameters
 params.input = null
@@ -28,11 +30,11 @@ def helpMessage() {
     nextflow run main.nf --input [file] --input_type [type]
     
     Required arguments:
-      --input              Path to input file (.h5ad for LIANA, .rds for NicheNet)
+      --input              Path to input file (.h5ad for LIANA, .rds for NicheNet/MultiNicheNet)
     
     Optional arguments:
       --input_type         Type of input file: 'h5ad' (LIANA only), 'rds' (NicheNet only), 
-                           or 'both' (integrated analysis) (default: 'h5ad')
+                           'rds_multi' (MultiNicheNet only), or 'both' (integrated analysis) (default: 'h5ad')
       --outdir             Output directory (default: 'results')
       --help               Show this message
     """
@@ -55,7 +57,7 @@ if (params.input) {
 // Log parameters
 log.info"""
 =============================================
-LIANA + NicheNet Nextflow Pipeline
+LIANA + NicheNet/MultiNicheNet Nextflow Pipeline
 =============================================
 Input file    : ${params.input}
 Input type    : ${params.input_type}
@@ -87,6 +89,15 @@ workflow {
         // Visualize NicheNet results only
         VISUALIZE_NICHENET_RESULTS(NICHENET_ANALYSIS_STANDALONE.out.nichenet_results)
     }
+    else if(params.input_type == 'rds_multi') {
+        log.info "Running MultiNicheNet workflow for Seurat object input"
+        
+        // Run MultiNicheNet analysis directly with Seurat object
+        MULTINICHENET_ANALYSIS_STANDALONE(input_ch)
+        
+        // Visualize MultiNicheNet results
+        VISUALIZE_MULTINICHENET_RESULTS(MULTINICHENET_ANALYSIS_STANDALONE.out.multinichenet_results)
+    }
     else {
         log.info "Running integrated LIANA + NicheNet workflow"
         
@@ -115,7 +126,7 @@ workflow {
 workflow.onComplete {
     log.info"""
     ===============================================
-    LIANA + NicheNet Pipeline Complete!
+    LIANA + NicheNet/MultiNicheNet Pipeline Complete!
     Results directory: ${params.outdir}
     ===============================================
     """
