@@ -3,8 +3,8 @@
 nextflow.enable.dsl = 2
 
 // Import only the modules needed for MultiNicheNet
-include { MULTINICHENET_ANALYSIS_STANDALONE } from './modules/multinichenet_standalone'
-include { VISUALIZE_MULTINICHENET_RESULTS } from './modules/visualize_multinichenet'
+include { MULTINICHENET_ANALYSIS_STANDALONE } from './multinichenet_standalone'
+include { VISUALIZE_MULTINICHENET_RESULTS } from './visualize_multinichenet'
 
 // Parameters
 params.input = null
